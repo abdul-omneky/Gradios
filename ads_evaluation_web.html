@@ -218,6 +218,47 @@
             text-align: center;
         }
 
+        .ad-timestamp {
+            font-size: 0.9rem;
+            color: #6c757d;
+            text-align: center;
+            margin-bottom: 15px;
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+        }
+
+        .ad-source {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 15px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            display: inline-block;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .ad-source.onboarding_ads {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border: 2px solid #28a745;
+        }
+
+        .ad-source.ad_central {
+            background: linear-gradient(135deg, #007bff 0%, #6610f2 100%);
+            color: white;
+            border: 2px solid #007bff;
+        }
+
+        .ad-source.creative_brief {
+            background: linear-gradient(135deg, #fd7e14 0%, #e83e8c 100%);
+            color: white;
+            border: 2px solid #fd7e14;
+        }
+
         .feedback-section {
             margin-top: 20px;
             padding-top: 20px;
@@ -451,6 +492,28 @@
                     <div id="brand-id-input">
                         <label for="brandId">Brand ID:</label>
                         <input type="text" id="brandId" class="form-control" placeholder="e.g., 7502">
+                        
+                        <div style="margin-top: 15px;">
+                            <label>🎯 Filter by Source:</label>
+                            <div class="radio-group" style="grid-template-columns: repeat(2, 1fr); margin-top: 10px;">
+                                <div class="radio-item active" data-source="all">
+                                    <input type="radio" name="source_filter" value="all" checked>
+                                    <span>🌟 All Sources</span>
+                                </div>
+                                <div class="radio-item" data-source="onboarding_ads">
+                                    <input type="radio" name="source_filter" value="onboarding_ads">
+                                    <span>🚀 Onboarding Ads</span>
+                                </div>
+                                <div class="radio-item" data-source="ad_central">
+                                    <input type="radio" name="source_filter" value="ad_central">
+                                    <span>🎯 Ad Central</span>
+                                </div>
+                                <div class="radio-item" data-source="creative_brief">
+                                    <input type="radio" name="source_filter" value="creative_brief">
+                                    <span>📝 Creative Brief</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div id="industry-input" class="hidden">
@@ -614,6 +677,83 @@
             });
         }
 
+        // Format timestamp to user-friendly format
+        function formatTimestamp(timestamp) {
+            try {
+                const date = new Date(timestamp);
+                const now = new Date();
+                const diffMs = now - date;
+                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                const diffDays = Math.floor(diffHours / 24);
+                
+                // Format options
+                const dateOptions = {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                };
+                
+                const formattedDate = date.toLocaleDateString('en-US', dateOptions);
+                
+                // Add relative time info
+                if (diffDays === 0) {
+                    if (diffHours === 0) {
+                        const diffMinutes = Math.floor(diffMs / (1000 * 60));
+                        if (diffMinutes < 1) {
+                            return `${formattedDate} (just now)`;
+                        } else {
+                            return `${formattedDate} (${diffMinutes}m ago)`;
+                        }
+                    } else {
+                        return `${formattedDate} (${diffHours}h ago)`;
+                    }
+                } else if (diffDays === 1) {
+                    return `${formattedDate} (yesterday)`;
+                } else if (diffDays < 7) {
+                    return `${formattedDate} (${diffDays}d ago)`;
+                } else {
+                    return formattedDate;
+                }
+            } catch (error) {
+                console.error('Error formatting timestamp:', error);
+                return timestamp; // Return original if formatting fails
+            }
+        }
+
+        // Format generated_by field with icons and labels
+        function formatGeneratedBy(generatedBy) {
+            if (!generatedBy) return '';
+            
+            const sourceMap = {
+                'onboarding_ads': {
+                    icon: '🚀',
+                    label: 'Onboarding Ads',
+                    description: 'Generated during brand onboarding'
+                },
+                'ad_central': {
+                    icon: '🎯',
+                    label: 'Ad Central',
+                    description: 'Generated via Ad Central platform'
+                },
+                'creative_brief': {
+                    icon: '📝',
+                    label: 'Creative Brief',
+                    description: 'Generated from creative brief'
+                }
+            };
+            
+            const source = sourceMap[generatedBy] || {
+                icon: '❓',
+                label: generatedBy.replace('_', ' ').toUpperCase(),
+                description: 'Unknown source'
+            };
+            
+            return `${source.icon} ${source.label}`;
+        }
+
         // DOM elements
         const searchModeRadios = document.querySelectorAll('input[name="search_mode"]');
         const radioItems = document.querySelectorAll('.radio-item');
@@ -639,6 +779,17 @@
                 item.classList.add('active');
                 item.querySelector('input').checked = true;
                 handleSearchModeChange();
+            });
+        });
+
+        // Source filter event listeners
+        const sourceFilterItems = document.querySelectorAll('.radio-item[data-source]');
+        sourceFilterItems.forEach(item => {
+            item.addEventListener('click', () => {
+                sourceFilterItems.forEach(r => r.classList.remove('active'));
+                item.classList.add('active');
+                item.querySelector('input').checked = true;
+                console.log('🎯 Source filter changed to:', item.dataset.source);
             });
         });
 
@@ -734,6 +885,13 @@
                         return;
                     }
                     params.append('brand_id', brandId);
+                    
+                    // Add source filter for brand_id mode
+                    const sourceFilter = document.querySelector('input[name="source_filter"]:checked').value;
+                    console.log('🎯 Source filter value:', sourceFilter);
+                    if (sourceFilter && sourceFilter !== 'all') {
+                        params.append('source_filter', sourceFilter);
+                    }
                     console.log('✅ Brand ID mode - parameters set');
                     break;
                     
@@ -917,6 +1075,13 @@
                         return;
                     }
                     params.append('brand_id', brandId);
+                    
+                    // Add source filter for brand_id pagination
+                    const paginationSourceFilter = document.querySelector('input[name="source_filter"]:checked').value;
+                    console.log('🎯 Pagination source filter value:', paginationSourceFilter);
+                    if (paginationSourceFilter && paginationSourceFilter !== 'all') {
+                        params.append('source_filter', paginationSourceFilter);
+                    }
                     console.log('✅ Brand ID pagination - parameters set');
                     break;
                 case 'industry':
@@ -1039,6 +1204,8 @@
             
             currentAds.forEach((ad, index) => {
                 console.log(`🎨 Processing ad ${index + 1}:`, ad);
+                console.log(`🕒 Ad timestamp:`, ad.timestamp);
+                console.log(`🔧 Ad generated by:`, ad.generated_by);
                 const adKey = `${ad.brand_id}:${ad.id}`;
                 
                 // Initialize scores and feedback if not exists
@@ -1078,6 +1245,8 @@
             adPair.innerHTML = `
                 <div class="ad-column">
                     <div class="ad-title">Generated Ad #${index + 1} (Brand ${ad.brand_id})</div>
+                    ${ad.generated_by ? `<div class="ad-source ${ad.generated_by}">${formatGeneratedBy(ad.generated_by)}</div>` : ''}
+                    ${ad.timestamp ? `<div class="ad-timestamp">🕒 Generated: ${formatTimestamp(ad.timestamp)}</div>` : ''}
                     <img src="${ad.generated_ad}" alt="Generated Ad" class="ad-image" onerror="this.style.display='none'">
                     
                     <div class="feedback-section">

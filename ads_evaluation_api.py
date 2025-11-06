@@ -48,6 +48,7 @@ class AdCentral(Base):
     brand_id = Column(Integer)
     response = Column(JSONB, nullable=False)
     payload = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
 class GPTBlueprint(Base):
@@ -55,6 +56,7 @@ class GPTBlueprint(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     brand_id = Column(Integer, nullable=False)
     response = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
 class GPTFirstTime(Base):
@@ -63,6 +65,7 @@ class GPTFirstTime(Base):
     brand_id = Column(Integer, nullable=False)
     response = Column(JSONB, nullable=False)
     payload = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
 class AdsEvaluation(Base):
@@ -180,6 +183,8 @@ class AdModel(BaseModel):
     asset: Optional[str] = None
     id: Optional[str] = None
     brand_id: Optional[int] = None
+    timestamp: Optional[str] = None
+    generated_by: Optional[str] = None
 
 
 class FeedbackModel(BaseModel):
@@ -234,6 +239,7 @@ class CombinedAdsResponse(BaseModel):
     pagination: PaginationMetadata
     brand_count: int = Field(description="Number of brands found")
     existing_feedback: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
 
 
 class FeedbackResponse(BaseModel):
@@ -412,8 +418,10 @@ def create_pagination_metadata(
 # -----------------------------
 # Core Business Logic Functions (copied and adapted from original file)
 # -----------------------------
-def get_combined_ads(session, brand_id, page: int = 1, page_size: int = 10):
-    """Fetch ads concurrently from GPTFirstTime, AdCentral, and GPTBlueprint tables."""
+def get_combined_ads(
+    session, brand_id, page: int = 1, page_size: int = 10, source_filter: str = None
+):
+    """Fetch ads concurrently from GPTFirstTime, AdCentral, and GPTBlueprint tables with optional source filtering."""
     all_ads = []
 
     # Normalize brand_id list
@@ -430,9 +438,13 @@ def get_combined_ads(session, brand_id, page: int = 1, page_size: int = 10):
         session, _ = get_session()
         results = (
             session.query(
-                GPTFirstTime.response, GPTFirstTime.brand_id, GPTFirstTime.payload
+                GPTFirstTime.response,
+                GPTFirstTime.brand_id,
+                GPTFirstTime.payload,
+                GPTFirstTime.created_at,
             )
             .filter(GPTFirstTime.brand_id.in_(brand_ids))
+            .order_by(desc(GPTFirstTime.created_at))
             .all()
         )
         session.close()
@@ -452,23 +464,30 @@ def get_combined_ads(session, brand_id, page: int = 1, page_size: int = 10):
                         else "",
                         "id": extract_id_from_url(r.get("s3_uri", "")),
                         "brand_id": row[1],
+                        "timestamp": row[3].isoformat() if row[3] else None,
+                        "generated_by": "onboarding_ads",
                     }
                 )
         return ads
 
     def fetch_ad_central():
         session, _ = get_session()
-        results = session.query(
-            AdCentral.payload["user_assets"].astext.label("user_assets"),
-            AdCentral.response["reference_ad_url"].astext.label("ref"),
-            AdCentral.response["presigned_url"].astext.label("gen"),
-            AdCentral.response["ad_generation_prompt"].astext.label("prompt"),
-            AdCentral.response["persona_asset_url"].astext.label("persona"),
-            AdCentral.response["product_asset_url"].astext.label("product"),
-            AdCentral.response["lifestyle_asset_url"].astext.label("life"),
-            AdCentral.response["s3_uri"].astext.label("s3_uri"),
-            AdCentral.brand_id,
-        ).filter(AdCentral.brand_id.in_(brand_ids))
+        results = (
+            session.query(
+                AdCentral.payload["user_assets"].astext.label("user_assets"),
+                AdCentral.response["reference_ad_url"].astext.label("ref"),
+                AdCentral.response["presigned_url"].astext.label("gen"),
+                AdCentral.response["ad_generation_prompt"].astext.label("prompt"),
+                AdCentral.response["persona_asset_url"].astext.label("persona"),
+                AdCentral.response["product_asset_url"].astext.label("product"),
+                AdCentral.response["lifestyle_asset_url"].astext.label("life"),
+                AdCentral.response["s3_uri"].astext.label("s3_uri"),
+                AdCentral.brand_id,
+                AdCentral.created_at,
+            )
+            .filter(AdCentral.brand_id.in_(brand_ids))
+            .order_by(desc(AdCentral.created_at))
+        )
         session.close()
         ads = []
         for r in results:
@@ -498,20 +517,29 @@ def get_combined_ads(session, brand_id, page: int = 1, page_size: int = 10):
                     "asset": asset or "",
                     "id": extract_id_from_url(r.s3_uri),
                     "brand_id": r.brand_id,
+                    "timestamp": r.created_at.isoformat() if r.created_at else None,
+                    "generated_by": "ad_central",
                 }
             )
         return ads
 
     def fetch_blueprint():
         session, _ = get_session()
-        results = session.query(
-            GPTBlueprint.response[0]["reference_ad_url"].astext.label("ref"),
-            GPTBlueprint.response[0]["presigned_url"].astext.label("gen"),
-            GPTBlueprint.response[0]["reference_ad_analysis"].astext.label("prompt"),
-            GPTBlueprint.response[0]["chosen_asset_url"].astext.label("asset"),
-            GPTBlueprint.response[0]["s3_uri"].astext.label("s3_uri"),
-            GPTBlueprint.brand_id,
-        ).filter(GPTBlueprint.brand_id.in_(brand_ids))
+        results = (
+            session.query(
+                GPTBlueprint.response[0]["reference_ad_url"].astext.label("ref"),
+                GPTBlueprint.response[0]["presigned_url"].astext.label("gen"),
+                GPTBlueprint.response[0]["reference_ad_analysis"].astext.label(
+                    "prompt"
+                ),
+                GPTBlueprint.response[0]["chosen_asset_url"].astext.label("asset"),
+                GPTBlueprint.response[0]["s3_uri"].astext.label("s3_uri"),
+                GPTBlueprint.brand_id,
+                GPTBlueprint.created_at,
+            )
+            .filter(GPTBlueprint.brand_id.in_(brand_ids))
+            .order_by(desc(GPTBlueprint.created_at))
+        )
         session.close()
         ads = []
         for r in results:
@@ -525,17 +553,31 @@ def get_combined_ads(session, brand_id, page: int = 1, page_size: int = 10):
                     "asset": r.asset,
                     "id": extract_id_from_url(r.s3_uri),
                     "brand_id": r.brand_id,
+                    "timestamp": r.created_at.isoformat() if r.created_at else None,
+                    "generated_by": "creative_brief",
                 }
             )
         return ads
 
-    # Run all 3 concurrently
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        results = list(
-            executor.map(
-                lambda fn: fn(), [fetch_first_time, fetch_ad_central, fetch_blueprint]
-            )
-        )
+    # Determine which functions to run based on source_filter
+    functions_to_run = []
+
+    if not source_filter or source_filter == "all":
+        # Run all sources
+        functions_to_run = [fetch_first_time, fetch_ad_central, fetch_blueprint]
+    elif source_filter == "onboarding_ads":
+        functions_to_run = [fetch_first_time]
+    elif source_filter == "ad_central":
+        functions_to_run = [fetch_ad_central]
+    elif source_filter == "creative_brief":
+        functions_to_run = [fetch_blueprint]
+    else:
+        # Invalid source_filter, default to all
+        functions_to_run = [fetch_first_time, fetch_ad_central, fetch_blueprint]
+
+    # Run selected functions concurrently
+    with ThreadPoolExecutor(max_workers=len(functions_to_run)) as executor:
+        results = list(executor.map(lambda fn: fn(), functions_to_run))
 
     # Flatten combined ads
     for batch in results:
@@ -676,7 +718,7 @@ async def root():
         "message": "Ads Evaluation API",
         "version": "1.0.0",
         "endpoints": {
-            "fetch_combined_ads": "/api/ads/combined?brand_id={id}&page=1&page_size=10",
+            "fetch_combined_ads": "/api/ads/combined?brand_id={id}&page=1&page_size=10&source_filter=all",
             "fetch_all_latest_brands": "/api/ads/combined?brands=true&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&page=1&page_size=10",
             "fetch_feedback": "/api/feedback?brand_id={id}&page=1&page_size=10",
             "upload_feedback": "/api/feedback/upload",
@@ -686,6 +728,7 @@ async def root():
             "max_page_size": "unlimited",
             "page_starts_from": 1,
         },
+        "timestamp": datetime.now().isoformat(),
     }
 
 
@@ -706,6 +749,10 @@ async def fetch_combined_ads(
         None, description="If True, fetch all active brands within date range"
     ),
     limit: Optional[int] = Query(10, description="Number of brands to fetch"),
+    source_filter: Optional[str] = Query(
+        None,
+        description="Filter by ad source: 'onboarding_ads', 'ad_central', 'creative_brief', or 'all'",
+    ),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, description="Number of items per page"),
 ):
@@ -720,6 +767,7 @@ async def fetch_combined_ads(
         end_date: End date for brand creation filter in YYYY-MM-DD format (optional)
         brands: If True, fetch all active brands within date range, otherwise default to 10 days (optional)
         limit: Number of brands to fetch when using industry/country filters (default 10)
+        source_filter: Filter by ad source - 'onboarding_ads', 'ad_central', 'creative_brief', or 'all' (optional)
         page: Page number (starts from 1)
         page_size: Number of items per page (default 10)
 
@@ -768,7 +816,7 @@ async def fetch_combined_ads(
             # Execute get_combined_ads and get_existing_feedback in parallel using ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=2) as executor:
                 future_ads = executor.submit(
-                    get_combined_ads, session, brand_ids, page, page_size
+                    get_combined_ads, session, brand_ids, page, page_size, source_filter
                 )
                 future_feedback = executor.submit(
                     get_existing_feedback, session, brand_ids, page, page_size
