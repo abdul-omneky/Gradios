@@ -1,0 +1,1289 @@
+<!-- pm2 start "python -m http.server 9895" --name ads_evaluation_web -->
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧠 Omneky Ads Evaluation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .controls {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .control-row {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            gap: 30px;
+            margin-bottom: 20px;
+            align-items: start;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            color: #393E46;
+            margin-bottom: 8px;
+            font-size: 15px;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .radio-group {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .radio-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .radio-item:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .radio-item input[type="radio"] {
+            margin-right: 8px;
+        }
+
+        .radio-item.active {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+
+        .loading .spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .ads-container {
+            padding: 30px;
+        }
+
+        .ad-pair {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin-bottom: 50px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            border: 1px solid #e9ecef;
+        }
+
+        .ad-column {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .ad-image {
+            width: 100%;
+            max-width: 400px;
+            height: auto;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .ad-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #393E46;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .feedback-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #e9ecef;
+        }
+
+        .feedback-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #393E46;
+            margin-bottom: 15px;
+        }
+
+        .feedback-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .feedback-btn {
+            padding: 8px 16px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.3s ease;
+        }
+
+        .feedback-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .feedback-btn.like:hover,
+        .feedback-btn.like.active {
+            border-color: #28a745;
+            background: #d4edda;
+        }
+
+        .feedback-btn.dislike:hover,
+        .feedback-btn.dislike.active {
+            border-color: #dc3545;
+            background: #f8d7da;
+        }
+
+        .score-display {
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: #e9ecef;
+        }
+
+        .score-warning {
+            color: #dc3545;
+            background: #f8d7da;
+        }
+
+        .feedback-textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            resize: vertical;
+            min-height: 80px;
+            font-family: inherit;
+        }
+
+        .prompt-display {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #667eea;
+            font-style: italic;
+        }
+
+        .asset-preview {
+            max-width: 150px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .submit-btn {
+            width: 100%;
+            margin-top: 20px;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(40, 167, 69, 0.3);
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .pagination-btn {
+            padding: 8px 16px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .pagination-info {
+            margin: 0 20px;
+            font-weight: 600;
+            color: #393E46;
+        }
+
+        .alert {
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            font-weight: 500;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .ads-count {
+            text-align: center;
+            font-size: 16px;
+            margin: 20px 0;
+            font-weight: 600;
+            color: #393E46;
+        }
+
+        @media (max-width: 768px) {
+            .control-row {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+
+            .ad-pair {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+
+            .radio-group {
+                grid-template-columns: 1fr;
+            }
+
+            .button-group {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 Omneky Ads Evaluation</h1>
+            <p>Evaluate and provide feedback on generated advertisements</p>
+        </div>
+
+        <div class="controls">
+            <div class="control-row">
+                <div class="form-group">
+                    <label>Search by:</label>
+                    <div class="radio-group">
+                        <div class="radio-item active" data-mode="brand_id">
+                            <input type="radio" name="search_mode" value="brand_id" checked>
+                            <span>Brand ID</span>
+                        </div>
+                        <div class="radio-item" data-mode="industry">
+                            <input type="radio" name="search_mode" value="industry">
+                            <span>Industry</span>
+                        </div>
+                        <div class="radio-item" data-mode="country">
+                            <input type="radio" name="search_mode" value="country">
+                            <span>Country</span>
+                        </div>
+                        <div class="radio-item" data-mode="industry_country">
+                            <input type="radio" name="search_mode" value="industry_country">
+                            <span>Industry + Country</span>
+                        </div>
+                        <div class="radio-item" data-mode="brands">
+                            <input type="radio" name="search_mode" value="brands">
+                            <span>Only Latest Brands</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div id="brand-id-input">
+                        <label for="brandId">Brand ID:</label>
+                        <input type="text" id="brandId" class="form-control" placeholder="e.g., 7502">
+                    </div>
+                    
+                    <div id="industry-input" class="hidden">
+                        <label for="industry">Select Industry:</label>
+                        <select id="industry" class="form-control">
+                            <option value="All">All</option>
+                            <option value="Beauty & Personal Care">Beauty & Personal Care</option>
+                            <option value="Financial Services">Financial Services</option>
+                            <option value="Telecommunications">Telecommunications</option>
+                            <option value="Media & Entertainment" selected>Media & Entertainment</option>
+                            <option value="Technology & Software">Technology & Software</option>
+                            <option value="Retail & E-commerce">Retail & E-commerce</option>
+                            <option value="Education & Online Learning">Education & Online Learning</option>
+                            <option value="Gaming">Gaming</option>
+                            <option value="Real Estate">Real Estate</option>
+                            <option value="Health & Wellness">Health & Wellness</option>
+                            <option value="Fashion & Apparel">Fashion & Apparel</option>
+                            <option value="Automotive">Automotive</option>
+                            <option value="Food & Beverage">Food & Beverage</option>
+                            <option value="Consumer Packaged Goods (CPG)">Consumer Packaged Goods (CPG)</option>
+                            <option value="Travel & Hospitality">Travel & Hospitality</option>
+                            <option value="Mobile Apps & SAAS">Mobile Apps & SAAS</option>
+                            <option value="Local Services">Local Services</option>
+                        </select>
+                    </div>
+
+                    <div id="country-input" class="hidden">
+                        <label for="country">Select Country:</label>
+                        <select id="country" class="form-control">
+                            <option value="English" selected>English</option>
+                            <option value="Russian">Russian</option>
+                            <option value="Portuguese">Portuguese</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="Arabic">Arabic</option>
+                            <option value="Malay">Malay</option>
+                            <option value="Japanese">Japanese</option>
+                            <option value="Hindi">Hindi</option>
+                            <option value="Korean">Korean</option>
+                            <option value="French">French</option>
+                            <option value="Chinese">Chinese</option>
+                            <option value="German">German</option>
+                            <option value="Tagalog">Tagalog</option>
+                            <option value="Bengali">Bengali</option>
+                            <option value="Tamil">Tamil</option>
+                            <option value="Turkish">Turkish</option>
+                            <option value="Polish">Polish</option>
+                            <option value="Hungarian">Hungarian</option>
+                            <option value="Italian">Italian</option>
+                            <option value="Romanian">Romanian</option>
+                            <option value="Norwegian">Norwegian</option>
+                            <option value="Hebrew">Hebrew</option>
+                            <option value="Danish">Danish</option>
+                            <option value="Thai">Thai</option>
+                            <option value="Vietnamese">Vietnamese</option>
+                        </select>
+                    </div>
+
+                    <div id="brands-input" class="hidden">
+                        <label>📅 Select Date Range for Latest Brands</label>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px;">
+                            <div>
+                                <label for="brandsStartDate">Start Date:</label>
+                                <input type="date" id="brandsStartDate" class="form-control">
+                            </div>
+                            <div>
+                                <label for="brandsEndDate">End Date:</label>
+                                <input type="date" id="brandsEndDate" class="form-control">
+                            </div>
+                        </div>
+                        <div style="margin-top: 10px; padding: 10px; background: #e8f4fd; border-radius: 8px; font-size: 14px; color: #0066cc;">
+                            💡 This will fetch all active brands within the selected date range (defaults to last 10 days)
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="reviewer">👤 Reviewer:</label>
+                    <select id="reviewer" class="form-control">
+                        <option value="Chris" selected>Chris</option>
+                        <option value="Yuki">Yuki</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Date Range Controls (shown only when not Brand ID mode) -->
+            <div id="date-range-controls" class="hidden" style="margin-bottom: 20px;">
+                <div class="form-group">
+                    <label>📅 Select Date Range & Brand Limit</label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-top: 10px;">
+                        <div>
+                            <label for="startDate">Start Date:</label>
+                            <input type="date" id="startDate" class="form-control">
+                        </div>
+                        <div>
+                            <label for="endDate">End Date:</label>
+                            <input type="date" id="endDate" class="form-control">
+                        </div>
+                        <div>
+                            <label for="brandLimit">Number of Brands:</label>
+                            <input type="number" id="brandLimit" class="form-control" min="1" max="100" value="10">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Brand Count Display -->
+            <div id="brand-count-display" class="hidden" style="text-align: center; padding: 10px; background: #e8f4fd; border-radius: 8px; margin: 10px 0;">
+                <span id="brandCountText" style="font-weight: 600; color: #0066cc;"></span>
+            </div>
+
+            <div class="button-group">
+                <button id="fetchBtn" class="btn btn-primary">🚀 Fetch Ads</button>
+                <button id="clearBtn" class="btn btn-secondary">🧹 Clear All</button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Loading ads...</p>
+        </div>
+
+        <div id="adsContainer" class="ads-container hidden">
+            <div id="adsCount" class="ads-count"></div>
+            <div id="adsContent"></div>
+        </div>
+
+        <div id="pagination" class="pagination hidden">
+            <button id="prevBtn" class="pagination-btn">← Previous</button>
+            <div id="paginationInfo" class="pagination-info"></div>
+            <button id="nextBtn" class="pagination-btn">Next →</button>
+        </div>
+
+        <div id="alerts"></div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE_URL = 'http://64.62.141.80:5858'; // Change this to your API URL
+        
+        // State management
+        let currentPage = 1;
+        let pageSize = 10;
+        let totalPages = 1;
+        let totalCount = 0;
+        let currentAds = [];
+        let currentFeedback = {};
+        let adScores = {};
+        let adFeedbackData = {};
+
+        // Debug function to log current state
+        function logCurrentState(context = 'Unknown') {
+            console.log(`📊 State at ${context}:`, {
+                currentPage,
+                pageSize,
+                totalPages,
+                totalCount,
+                currentAdsLength: currentAds.length,
+                currentFeedbackKeys: Object.keys(currentFeedback).length,
+                adScoresKeys: Object.keys(adScores).length,
+                adFeedbackDataKeys: Object.keys(adFeedbackData).length
+            });
+        }
+
+        // DOM elements
+        const searchModeRadios = document.querySelectorAll('input[name="search_mode"]');
+        const radioItems = document.querySelectorAll('.radio-item');
+        const brandIdInput = document.getElementById('brand-id-input');
+        const industryInput = document.getElementById('industry-input');
+        const countryInput = document.getElementById('country-input');
+        const fetchBtn = document.getElementById('fetchBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const loading = document.getElementById('loading');
+        const adsContainer = document.getElementById('adsContainer');
+        const adsContent = document.getElementById('adsContent');
+        const adsCount = document.getElementById('adsCount');
+        const pagination = document.getElementById('pagination');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const paginationInfo = document.getElementById('paginationInfo');
+        const alerts = document.getElementById('alerts');
+
+        // Event listeners
+        radioItems.forEach(item => {
+            item.addEventListener('click', () => {
+                radioItems.forEach(r => r.classList.remove('active'));
+                item.classList.add('active');
+                item.querySelector('input').checked = true;
+                handleSearchModeChange();
+            });
+        });
+
+        searchModeRadios.forEach(radio => {
+            radio.addEventListener('change', handleSearchModeChange);
+        });
+
+        fetchBtn.addEventListener('click', fetchAds);
+        clearBtn.addEventListener('click', clearAll);
+        prevBtn.addEventListener('click', () => changePage(currentPage - 1));
+        nextBtn.addEventListener('click', () => {
+            console.log('🔄 Next Page clicked! Current page:', currentPage, 'Total pages:', totalPages);
+            logCurrentState('Before Next Page Click');
+            changePage(currentPage + 1);
+        });
+
+        // Functions
+        function handleSearchModeChange() {
+            const selectedMode = document.querySelector('input[name="search_mode"]:checked').value;
+            const dateControls = document.getElementById('date-range-controls');
+            const brandCountDisplay = document.getElementById('brand-count-display');
+            const brandsInput = document.getElementById('brands-input');
+            
+            // Hide all inputs
+            brandIdInput.classList.add('hidden');
+            industryInput.classList.add('hidden');
+            countryInput.classList.add('hidden');
+            brandsInput.classList.add('hidden');
+            dateControls.classList.add('hidden');
+            brandCountDisplay.classList.add('hidden');
+            
+            // Show relevant inputs
+            switch(selectedMode) {
+                case 'brand_id':
+                    brandIdInput.classList.remove('hidden');
+                    break;
+                case 'industry':
+                    industryInput.classList.remove('hidden');
+                    dateControls.classList.remove('hidden');
+                    break;
+                case 'country':
+                    countryInput.classList.remove('hidden');
+                    dateControls.classList.remove('hidden');
+                    break;
+                case 'industry_country':
+                    industryInput.classList.remove('hidden');
+                    countryInput.classList.remove('hidden');
+                    dateControls.classList.remove('hidden');
+                    break;
+                case 'brands':
+                    brandsInput.classList.remove('hidden');
+                    break;
+            }
+        }
+
+        function showAlert(message, type = 'info') {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.textContent = message;
+            alerts.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+
+        function showLoading() {
+            loading.classList.remove('hidden');
+            adsContainer.classList.add('hidden');
+            pagination.classList.add('hidden');
+        }
+
+        function hideLoading() {
+            loading.classList.add('hidden');
+        }
+
+        async function fetchAds() {
+            const selectedMode = document.querySelector('input[name="search_mode"]:checked').value;
+            console.log('🔍 Selected search mode:', selectedMode);
+            let params = new URLSearchParams();
+            
+            // Add common parameters
+            params.append('page', currentPage);
+            params.append('page_size', pageSize);
+            
+            // Add mode-specific parameters
+            switch(selectedMode) {
+                case 'brand_id':
+                    const brandId = document.getElementById('brandId').value.trim();
+                    console.log('🏢 Brand ID input value:', brandId);
+                    if (!brandId) {
+                        showAlert('Please enter a Brand ID', 'error');
+                        return;
+                    }
+                    params.append('brand_id', brandId);
+                    console.log('✅ Brand ID mode - parameters set');
+                    break;
+                    
+                case 'industry':
+                    const industry = document.getElementById('industry').value;
+                    console.log('🏭 Industry selected:', industry);
+                    params.append('industry', industry);
+                    addDateParameters(params);
+                    console.log('✅ Industry mode - parameters set');
+                    break;
+                    
+                case 'country':
+                    const country = document.getElementById('country').value;
+                    console.log('🌍 Country selected:', country);
+                    params.append('country', country);
+                    addDateParameters(params);
+                    console.log('✅ Country mode - parameters set');
+                    break;
+                    
+                case 'industry_country':
+                    const industryCountry = document.getElementById('industry').value;
+                    const countryIndustry = document.getElementById('country').value;
+                    console.log('🏭🌍 Industry + Country selected:', { industry: industryCountry, country: countryIndustry });
+                    params.append('industry', industryCountry);
+                    params.append('country', countryIndustry);
+                    addDateParameters(params);
+                    console.log('✅ Industry + Country mode - parameters set');
+                    break;
+                    
+                case 'brands':
+                    console.log('🏢 Brands filter mode selected');
+                    params.append('brands', 'true');
+                    addBrandsDateParameters(params);
+                    console.log('✅ Brands mode - parameters set');
+                    break;
+            }
+
+            showLoading();
+            currentPage = 1;
+            params.set('page', currentPage); // Update page in params
+
+            try {
+                const apiUrl = `${API_BASE_URL}/api/ads/combined?${params}`;
+                console.log('🌐 Fetching from API:', apiUrl);
+                console.log('📋 API Parameters:', Object.fromEntries(params));
+                
+                const response = await fetch(apiUrl);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('📊 API Response:', data);
+                
+                currentAds = data.ads;
+                totalCount = data.pagination.total_count;
+                totalPages = data.pagination.total_pages;
+                currentFeedback = data.existing_feedback;
+                
+                // Show brand count if available
+                if (selectedMode !== 'brand_id' && data.brand_count !== undefined) {
+                    showBrandCount(data.brand_count);
+                }
+                
+                // Initialize scores and feedback data from existing feedback
+                Object.keys(currentFeedback).forEach(key => {
+                    const feedback = currentFeedback[key];
+                    adScores[key] = feedback.score;
+                    adFeedbackData[key] = {
+                        generated: feedback.generated,
+                        prompt: feedback.prompt,
+                        asset: feedback.asset
+                    };
+                });
+                
+                displayAds();
+                updatePagination();
+                
+                hideLoading();
+                adsContainer.classList.remove('hidden');
+                if (totalPages > 1) {
+                    pagination.classList.remove('hidden');
+                }
+                
+                showAlert(`Successfully loaded ${currentAds.length} ads!`, 'success');
+                
+            } catch (error) {
+                hideLoading();
+                console.error('Error fetching ads:', error);
+                showAlert('Error fetching ads. Please check if the API is running and try again.', 'error');
+            }
+        }
+
+        function addDateParameters(params) {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const limit = document.getElementById('brandLimit').value;
+            
+            console.log('📅 Adding date parameters:', { startDate, endDate, limit });
+            
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+            if (limit) params.append('limit', limit);
+        }
+
+        function addBrandsDateParameters(params) {
+            const startDate = document.getElementById('brandsStartDate').value;
+            const endDate = document.getElementById('brandsEndDate').value;
+            
+            console.log('📅 Adding brands date parameters:', { startDate, endDate });
+            
+            if (startDate) params.append('start_date', startDate);
+            if (endDate) params.append('end_date', endDate);
+        }
+
+        function showBrandCount(count) {
+            const brandCountDisplay = document.getElementById('brand-count-display');
+            const brandCountText = document.getElementById('brandCountText');
+            
+            brandCountText.textContent = `🎯 ${count} brands found for the selected criteria`;
+            brandCountDisplay.classList.remove('hidden');
+        }
+
+        async function fetchFeedback(brandId) {
+            console.log('🔍 fetchFeedback called for brand:', brandId);
+            try {
+                // Fetch ALL feedback for this brand (no pagination) to ensure we have feedback for all ads
+                const feedbackUrl = `${API_BASE_URL}/api/feedback?brand_id=${brandId}&page=1&page_size=1000`;
+                console.log('🌐 Fetching feedback from:', feedbackUrl);
+                const response = await fetch(feedbackUrl);
+                console.log('📡 Feedback response status:', response.status);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('📋 Feedback data received:', data);
+                    currentFeedback = data.feedback;
+                    console.log('💾 Current feedback keys:', Object.keys(currentFeedback));
+                    
+                    // Initialize scores and feedback data from existing feedback
+                    Object.keys(currentFeedback).forEach(key => {
+                        const feedback = currentFeedback[key];
+                        adScores[key] = feedback.score;
+                        adFeedbackData[key] = {
+                            generated: feedback.generated,
+                            prompt: feedback.prompt,
+                            asset: feedback.asset
+                        };
+                    });
+                    console.log('✅ Feedback processing completed. Total feedback items:', Object.keys(currentFeedback).length);
+                }
+            } catch (error) {
+                console.error('❌ Error fetching feedback:', error);
+            }
+        }
+        
+        async function changePage(newPage) {
+            console.log('📄 changePage called with:', { newPage, currentPage, totalPages, totalCount });
+            
+            if (newPage < 1 || newPage > totalPages) {
+                console.log('❌ Page out of bounds:', { newPage, totalPages });
+                return;
+            }
+            
+            const selectedMode = document.querySelector('input[name="search_mode"]:checked').value;
+            console.log('🔍 Selected mode:', selectedMode);
+            let brandId = '';
+
+            // Handle pagination for different modes
+            let params = new URLSearchParams();
+            params.append('page', newPage);
+            params.append('page_size', pageSize);
+
+            switch(selectedMode) {
+                case 'brand_id':
+                    brandId = document.getElementById('brandId').value.trim();
+                    console.log('🏢 Brand ID from input (pagination):', brandId);
+                    if (!brandId) {
+                        console.log('❌ No Brand ID entered');
+                        showAlert('Please enter a Brand ID', 'error');
+                        return;
+                    }
+                    params.append('brand_id', brandId);
+                    console.log('✅ Brand ID pagination - parameters set');
+                    break;
+                case 'industry':
+                    const industry = document.getElementById('industry').value;
+                    console.log('🏭 Industry pagination:', industry);
+                    params.append('industry', industry);
+                    addDateParameters(params);
+                    console.log('✅ Industry pagination - parameters set');
+                    break;
+                case 'country':
+                    const country = document.getElementById('country').value;
+                    console.log('🌍 Country pagination:', country);
+                    params.append('country', country);
+                    addDateParameters(params);
+                    console.log('✅ Country pagination - parameters set');
+                    break;
+                case 'industry_country':
+                    const industryCountry = document.getElementById('industry').value;
+                    const countryIndustry = document.getElementById('country').value;
+                    console.log('🏭🌍 Industry + Country pagination:', { industry: industryCountry, country: countryIndustry });
+                    params.append('industry', industryCountry);
+                    params.append('country', countryIndustry);
+                    addDateParameters(params);
+                    console.log('✅ Industry + Country pagination - parameters set');
+                    break;
+                case 'brands':
+                    console.log('🏢 Brands filter pagination');
+                    params.append('brands', 'true');
+                    addBrandsDateParameters(params);
+                    console.log('✅ Brands pagination - parameters set');
+                    break;
+                default:
+                    console.log('❌ Unsupported search mode for pagination:', selectedMode);
+                    showAlert('Unsupported search mode for pagination', 'error');
+                    return;
+            }
+
+            showLoading();
+            currentPage = newPage;
+            console.log('🔄 Updated currentPage to:', currentPage);
+
+            try {
+                const apiUrl = `${API_BASE_URL}/api/ads/combined?${params}`;
+                console.log('🌐 Fetching from API:', apiUrl);
+                
+                const response = await fetch(apiUrl);
+                console.log('📡 API Response status:', response.status, response.statusText);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('📊 API Response data:', data);
+                console.log('📈 Ads received:', data.ads?.length || 0);
+                currentAds = data.ads;
+                currentFeedback = data.existing_feedback;
+                
+                // Initialize scores and feedback data from existing feedback
+                Object.keys(currentFeedback).forEach(key => {
+                    const feedback = currentFeedback[key];
+                    adScores[key] = feedback.score;
+                    adFeedbackData[key] = {
+                        generated: feedback.generated,
+                        prompt: feedback.prompt,
+                        asset: feedback.asset
+                    };
+                });
+                
+                console.log('🖼️ Displaying ads...');
+                displayAds();
+                console.log('📄 Updating pagination...');
+                updatePagination();
+                hideLoading();
+                
+                // Ensure containers are visible after page change
+                console.log('👁️ Making sure containers are visible...');
+                adsContainer.classList.remove('hidden');
+                if (totalPages > 1) {
+                    pagination.classList.remove('hidden');
+                }
+                console.log('- adsContainer hidden after fix:', adsContainer.classList.contains('hidden'));
+                console.log('- pagination hidden after fix:', pagination.classList.contains('hidden'));
+                
+                console.log('✅ Page change completed successfully');
+                logCurrentState('After Page Change Success');
+                
+            } catch (error) {
+                hideLoading();
+                console.error('❌ Error changing page:', error);
+                console.error('🔍 Error details:', {
+                    message: error.message,
+                    stack: error.stack,
+                    currentPage,
+                    brandId,
+                    apiUrl: `${API_BASE_URL}/api/ads/combined?brand_id=${brandId}&page=${currentPage}&page_size=${pageSize}`
+                });
+                logCurrentState('After Page Change Error');
+                showAlert('Error loading page. Please try again.', 'error');
+            }
+        }
+
+        function displayAds() {
+            console.log('🖼️ displayAds called. Current ads:', currentAds.length);
+            console.log('📊 Current ads data:', currentAds);
+            
+            if (currentAds.length === 0) {
+                console.log('⚠️ No ads to display');
+                adsContent.innerHTML = '<div class="alert alert-info">No ads found for the selected criteria.</div>';
+                adsCount.textContent = '';
+                return;
+            }
+
+            const countText = `🎯 ${totalCount} ads found, showing ${currentAds.length} on page ${currentPage}`;
+            console.log('📈 Display info:', countText);
+            adsCount.textContent = countText;
+            
+            adsContent.innerHTML = '';
+            console.log('🔄 Processing', currentAds.length, 'ads for display');
+            
+            currentAds.forEach((ad, index) => {
+                console.log(`🎨 Processing ad ${index + 1}:`, ad);
+                const adKey = `${ad.brand_id}:${ad.id}`;
+                
+                // Initialize scores and feedback if not exists
+                if (!adScores[adKey]) {
+                    adScores[adKey] = currentFeedback[adKey]?.score || 100;
+                }
+                if (!adFeedbackData[adKey]) {
+                    adFeedbackData[adKey] = currentFeedback[adKey] || {
+                        generated: { action: null, comment: '' },
+                        prompt: { action: null, comment: '' },
+                        asset: { action: null, comment: '' }
+                    };
+                }
+                
+                const adPair = createAdPairElement(ad, index, adKey);
+                adsContent.appendChild(adPair);
+            });
+            console.log('✅ All ads rendered successfully');
+            
+            // Debug: Check if ads container is visible and has content
+            console.log('🔍 DOM Debug Info:');
+            console.log('- adsContainer classes:', adsContainer.className);
+            console.log('- adsContainer hidden:', adsContainer.classList.contains('hidden'));
+            console.log('- adsContent children count:', adsContent.children.length);
+            console.log('- adsContent innerHTML length:', adsContent.innerHTML.length);
+            console.log('- First child element:', adsContent.children[0]);
+            
+            // Check if pagination is visible
+            console.log('- pagination classes:', pagination.className);
+            console.log('- pagination hidden:', pagination.classList.contains('hidden'));
+        }
+
+        function createAdPairElement(ad, index, adKey) {
+            const adPair = document.createElement('div');
+            adPair.className = 'ad-pair';
+            
+            adPair.innerHTML = `
+                <div class="ad-column">
+                    <div class="ad-title">Generated Ad #${index + 1} (Brand ${ad.brand_id})</div>
+                    <img src="${ad.generated_ad}" alt="Generated Ad" class="ad-image" onerror="this.style.display='none'">
+                    
+                    <div class="feedback-section">
+                        <div class="feedback-title">🖼️ Generated Ad Feedback</div>
+                        ${createFeedbackControls(adKey, 'generated')}
+                        
+                        ${ad.prompt ? `
+                            <div class="feedback-title">🧠 Prompt</div>
+                            <div class="prompt-display">${ad.prompt}</div>
+                            ${createFeedbackControls(adKey, 'prompt')}
+                        ` : ''}
+                        
+                        ${ad.asset ? `
+                            <div class="feedback-title">🎨 Asset</div>
+                            ${ad.asset.startsWith('http') ? '<img src="' + ad.asset + '" alt="Asset" class="asset-preview" onerror="this.style.display=\'none\';">' : ''}
+                            ${createFeedbackControls(adKey, 'asset')}
+                        ` : ''}
+                        
+                        <button class="btn submit-btn" data-ad-key="${adKey}" data-brand-id="${ad.brand_id}" data-identifier="${ad.id}" data-reference-ad="${ad.reference_ad || ''}" data-generated-ad="${ad.generated_ad}" data-asset="${ad.asset || ''}" data-prompt="${ad.prompt || ''}" onclick="submitFeedbackSafe(this)">
+                            Submit All Feedback
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="ad-column">
+                    <div class="ad-title">Reference Ad</div>
+                    ${ad.reference_ad ? '<img src="' + ad.reference_ad + '" alt="Reference Ad" class="ad-image" onerror="this.style.display=\'none\';">' : '<div class="alert alert-info">No reference ad available</div>'}
+                </div>
+            `;
+            
+            return adPair;
+        }
+
+        function createFeedbackControls(adKey, category) {
+            const currentFeedback = adFeedbackData[adKey][category];
+            const score = adScores[adKey];
+            const scoreClass = score <= 80 ? 'score-warning' : '';
+            const scoreWarning = score <= 80 ? '⚠️' : '';
+            
+            return `
+                <div class="feedback-controls">
+                    <button class="feedback-btn like ${currentFeedback.action === 'like' ? 'active' : ''}" onclick="updateFeedback('${adKey}', '${category}', 'like')">👍</button>
+                    <button class="feedback-btn dislike ${currentFeedback.action === 'dislike' ? 'active' : ''}" onclick="updateFeedback('${adKey}', '${category}', 'dislike')">👎</button>
+                    <div class="score-display ${scoreClass}">Score: ${score} ${scoreWarning}</div>
+                </div>
+                <textarea class="feedback-textarea" placeholder="Feedback for ${category}" 
+                    onchange="updateComment('${adKey}', '${category}', this.value)">${currentFeedback.comment}</textarea>
+            `;
+        }
+
+        function updateFeedback(adKey, category, action) {
+            const delta = action === 'like' ? 5 : -5;
+            adScores[adKey] += delta;
+            adFeedbackData[adKey][category].action = action;
+            
+            // Re-render the ads to update the UI
+            displayAds();
+        }
+
+        function updateComment(adKey, category, comment) {
+            adFeedbackData[adKey][category].comment = comment;
+        }
+
+        function submitFeedbackSafe(button) {
+            const adKey = button.dataset.adKey;
+            const brandId = button.dataset.brandId;
+            const identifier = button.dataset.identifier;
+            const referenceAd = button.dataset.referenceAd;
+            const generatedAd = button.dataset.generatedAd;
+            const asset = button.dataset.asset;
+            const prompt = button.dataset.prompt;
+            
+            submitFeedback(adKey, brandId, identifier, referenceAd, generatedAd, asset, prompt, button);
+        }
+
+        async function submitFeedback(adKey, brandId, identifier, referenceAd, generatedAd, asset, prompt, button) {
+            const reviewer = document.getElementById('reviewer').value;
+            const score = adScores[adKey];
+            const feedbackData = adFeedbackData[adKey];
+            
+            // Show loading state
+            const originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <div style="width: 16px; height: 16px; border: 2px solid #fff; border-top: 2px solid transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                    Saving Feedback...
+                </div>
+            `;
+            
+            const payload = {
+                brand_id: parseInt(brandId),
+                identifier: identifier,
+                reference_ad_url: referenceAd,
+                generated_ad_url: generatedAd,
+                asset_url: asset,
+                ad_generation_prompt: prompt,
+                ad_action: feedbackData.generated.action,
+                ad_feedback: feedbackData.generated.comment,
+                ad_score: score.toString(),
+                asset_action: feedbackData.asset.action,
+                asset_feedback: feedbackData.asset.comment,
+                ad_generation_prompt_action: feedbackData.prompt.action,
+                ad_generation_prompt_feedback: feedbackData.prompt.comment,
+                user_name: reviewer
+            };
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/feedback/upload`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                
+                // Show success state briefly
+                button.innerHTML = `
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        ✅ Feedback Saved!
+                    </div>
+                `;
+                
+                showAlert(`✅ Feedback ${result.action} successfully by ${reviewer}! Final Score: ${score}`, 'success');
+                
+                // Restore button after 2 seconds
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }, 2000);
+                
+            } catch (error) {
+                console.error('Error submitting feedback:', error);
+                showAlert('❌ Error saving feedback. Please try again.', 'error');
+                
+                // Restore button on error
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }
+        }
+
+        function updatePagination() {
+            const startItem = (currentPage - 1) * pageSize + 1;
+            const endItem = Math.min(currentPage * pageSize, totalCount);
+            
+            const paginationText = `Page ${currentPage} of ${totalPages} (${startItem}-${endItem} of ${totalCount})`;
+            console.log('📄 Pagination update:', {
+                currentPage,
+                totalPages,
+                totalCount,
+                pageSize,
+                startItem,
+                endItem,
+                paginationText
+            });
+            
+            paginationInfo.textContent = paginationText;
+            
+            const prevDisabled = currentPage <= 1;
+            const nextDisabled = currentPage >= totalPages;
+            console.log('🔘 Button states:', { prevDisabled, nextDisabled });
+            
+            prevBtn.disabled = prevDisabled;
+            nextBtn.disabled = nextDisabled;
+        }
+
+        function clearAll() {
+            currentAds = [];
+            currentFeedback = {};
+            adScores = {};
+            adFeedbackData = {};
+            currentPage = 1;
+            totalPages = 1;
+            totalCount = 0;
+            
+            adsContainer.classList.add('hidden');
+            pagination.classList.add('hidden');
+            
+            // Clear form inputs
+            document.getElementById('brandId').value = '';
+            
+            showAlert('✅ All ads and feedback cleared successfully!', 'success');
+        }
+
+        // Initialize date inputs with default values (10 days ago to today)
+        function initializeDateInputs() {
+            const today = new Date();
+            const tenDaysAgo = new Date(today.getTime() - (10 * 24 * 60 * 60 * 1000));
+            
+            document.getElementById('startDate').value = tenDaysAgo.toISOString().split('T')[0];
+            document.getElementById('endDate').value = today.toISOString().split('T')[0];
+            
+            // Initialize brands date inputs with the same default values
+            document.getElementById('brandsStartDate').value = tenDaysAgo.toISOString().split('T')[0];
+            document.getElementById('brandsEndDate').value = today.toISOString().split('T')[0];
+        }
+
+        // Initialize the page
+        initializeDateInputs();
+        handleSearchModeChange();
+    </script>
+</body>
+</html>
