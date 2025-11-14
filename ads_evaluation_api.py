@@ -366,35 +366,6 @@ def get_brands_by_filters(
     return brand_ids
 
 
-def get_latest_brands(session, start_date=None, end_date=None):
-    """Get all the brands ids that are active and within given date range"""
-    # Parse dates
-    if start_date:
-        start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(
-            hour=0, minute=0, second=0
-        )
-    else:
-        start_dt = datetime.now() - timedelta(days=10)
-
-    if end_date:
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
-            hour=23, minute=59, second=59
-        )
-    else:
-        end_dt = datetime.now().replace(hour=23, minute=59, second=59)
-
-    # Query active brands within date range, ordered by creation date descending
-    results = (
-        session.query(Brand.id)
-        .filter(Brand.is_active == True, Brand.created_at.between(start_dt, end_dt))
-        .order_by(desc(Brand.created_at))
-        .all()
-    )
-
-    brands = [r.id for r in results]
-    return brands
-
-
 def create_pagination_metadata(
     page: int, page_size: int, total_count: int
 ) -> PaginationMetadata:
@@ -419,9 +390,15 @@ def create_pagination_metadata(
 # Core Business Logic Functions (copied and adapted from original file)
 # -----------------------------
 def get_combined_ads(
-    session, brand_id, page: int = 1, page_size: int = 10, source_filter: str = None
+    session,
+    brand_id,
+    page: int = 1,
+    page_size: int = 10,
+    source_filter: str = None,
+    start_date: str = None,
+    end_date: str = None,
 ):
-    """Fetch ads concurrently from GPTFirstTime, AdCentral, and GPTBlueprint tables with optional source filtering."""
+    """Fetch ads concurrently from GPTFirstTime, AdCentral, and GPTBlueprint tables with optional source filtering and date filtering."""
     all_ads = []
 
     # Normalize brand_id list
@@ -436,58 +413,119 @@ def get_combined_ads(
 
     def fetch_first_time():
         session, _ = get_session()
-        results = (
-            session.query(
-                GPTFirstTime.response,
-                GPTFirstTime.brand_id,
-                GPTFirstTime.payload,
-                GPTFirstTime.created_at,
-            )
-            .filter(GPTFirstTime.brand_id.in_(brand_ids))
-            .order_by(desc(GPTFirstTime.created_at))
-            .all()
+        query = session.query(
+            GPTFirstTime.response,
+            GPTFirstTime.brand_id,
+            GPTFirstTime.payload,
+            GPTFirstTime.created_at,
         )
+
+        # For "All Ads" mode, filter by ad creation date instead of brand_ids
+        if start_date or end_date:
+            if start_date:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(
+                    hour=0, minute=0, second=0
+                )
+            else:
+                start_dt = datetime.now() - timedelta(days=5)
+
+            if end_date:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59
+                )
+            else:
+                end_dt = datetime.now().replace(hour=23, minute=59, second=59)
+
+            query = query.filter(GPTFirstTime.created_at.between(start_dt, end_dt))
+        else:
+            # For other modes, filter by brand_ids
+            query = query.filter(GPTFirstTime.brand_id.in_(brand_ids))
+
+        results = query.order_by(desc(GPTFirstTime.created_at)).all()
         session.close()
         ads = []
+
         for row in results:
-            if row and row[0] and isinstance(row[0], list):
-                r = row[0][0]
-                if not r.get("presigned_url"):
+            if row and row[0]:
+                try:
+                    # Handle both dict and list formats
+                    if isinstance(row[0], list) and len(row[0]) > 0:
+                        r = row[0][0]
+                    elif isinstance(row[0], dict):
+                        r = row[0]
+                    else:
+                        continue
+
+                    if not r or not r.get("presigned_url"):
+                        continue
+
+                    # Get asset safely
+                    asset = ""
+                    if (
+                        row[2]
+                        and isinstance(row[2], dict)
+                        and ("user_assets" in row[2] or "asset_url" in row[2])
+                    ):
+                        if "user_assets" in row[2]:
+                            user_assets = row[2]["user_assets"]
+                            if isinstance(user_assets, list) and len(user_assets) > 0:
+                                asset = user_assets[0]
+                        elif "asset_url" in row[2]:
+                            asset = row[2]["asset_url"]
+
+                    ads.append(
+                        {
+                            "reference_ad": r.get("reference_ad_url"),
+                            "generated_ad": strip_query_params(r["presigned_url"]),
+                            "prompt": r.get("ad_generation_prompt", ""),
+                            "asset": asset,
+                            "id": extract_id_from_url(r.get("s3_uri", "")),
+                            "brand_id": row[1],
+                            "timestamp": row[3].isoformat() if row[3] else None,
+                            "generated_by": "onboarding_ads",
+                        }
+                    )
+                except Exception:
                     continue
-                ads.append(
-                    {
-                        "reference_ad": r.get("reference_ad_url"),
-                        "generated_ad": strip_query_params(r["presigned_url"]),
-                        "prompt": r.get("ad_generation_prompt", ""),
-                        "asset": row[2]["user_assets"][0]
-                        if len(row[2]["user_assets"]) > 0
-                        else "",
-                        "id": extract_id_from_url(r.get("s3_uri", "")),
-                        "brand_id": row[1],
-                        "timestamp": row[3].isoformat() if row[3] else None,
-                        "generated_by": "onboarding_ads",
-                    }
-                )
         return ads
 
     def fetch_ad_central():
         session, _ = get_session()
-        results = (
-            session.query(
-                AdCentral.payload["user_assets"].astext.label("user_assets"),
-                AdCentral.response["reference_ad_url"].astext.label("ref"),
-                AdCentral.response["presigned_url"].astext.label("gen"),
-                AdCentral.response["ad_generation_prompt"].astext.label("prompt"),
-                AdCentral.response["persona_asset_url"].astext.label("persona"),
-                AdCentral.response["product_asset_url"].astext.label("product"),
-                AdCentral.response["lifestyle_asset_url"].astext.label("life"),
-                AdCentral.response["s3_uri"].astext.label("s3_uri"),
-                AdCentral.brand_id,
-                AdCentral.created_at,
-            )
-            .filter(AdCentral.brand_id.in_(brand_ids))
-            .order_by(desc(AdCentral.created_at))
+        query = session.query(
+            AdCentral.payload["user_assets"].astext.label("user_assets"),
+            AdCentral.response["reference_ad_url"].astext.label("ref"),
+            AdCentral.response["presigned_url"].astext.label("gen"),
+            AdCentral.response["ad_generation_prompt"].astext.label("prompt"),
+            AdCentral.response["persona_asset_url"].astext.label("persona"),
+            AdCentral.response["product_asset_url"].astext.label("product"),
+            AdCentral.response["lifestyle_asset_url"].astext.label("life"),
+            AdCentral.response["s3_uri"].astext.label("s3_uri"),
+            AdCentral.brand_id,
+            AdCentral.created_at,
         )
+
+        # For "All Ads" mode, filter by ad creation date instead of brand_ids
+        if start_date or end_date:
+            if start_date:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(
+                    hour=0, minute=0, second=0
+                )
+            else:
+                start_dt = datetime.now() - timedelta(days=5)
+
+            if end_date:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59
+                )
+            else:
+                end_dt = datetime.now().replace(hour=23, minute=59, second=59)
+
+            query = query.filter(AdCentral.created_at.between(start_dt, end_dt))
+        else:
+            # For other modes, filter by brand_ids
+            query = query.filter(AdCentral.brand_id.in_(brand_ids))
+
+        results = query.order_by(desc(AdCentral.created_at)).all()
         session.close()
         ads = []
         for r in results:
@@ -525,21 +563,38 @@ def get_combined_ads(
 
     def fetch_blueprint():
         session, _ = get_session()
-        results = (
-            session.query(
-                GPTBlueprint.response[0]["reference_ad_url"].astext.label("ref"),
-                GPTBlueprint.response[0]["presigned_url"].astext.label("gen"),
-                GPTBlueprint.response[0]["reference_ad_analysis"].astext.label(
-                    "prompt"
-                ),
-                GPTBlueprint.response[0]["chosen_asset_url"].astext.label("asset"),
-                GPTBlueprint.response[0]["s3_uri"].astext.label("s3_uri"),
-                GPTBlueprint.brand_id,
-                GPTBlueprint.created_at,
-            )
-            .filter(GPTBlueprint.brand_id.in_(brand_ids))
-            .order_by(desc(GPTBlueprint.created_at))
+        query = session.query(
+            GPTBlueprint.response[0]["reference_ad_url"].astext.label("ref"),
+            GPTBlueprint.response[0]["presigned_url"].astext.label("gen"),
+            GPTBlueprint.response[0]["prompt"].astext.label("prompt"),
+            GPTBlueprint.response[0]["chosen_asset_url"].astext.label("asset"),
+            GPTBlueprint.response[0]["s3_uri"].astext.label("s3_uri"),
+            GPTBlueprint.brand_id,
+            GPTBlueprint.created_at,
         )
+
+        # For "All Ads" mode, filter by ad creation date instead of brand_ids
+        if start_date or end_date:
+            if start_date:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(
+                    hour=0, minute=0, second=0
+                )
+            else:
+                start_dt = datetime.now() - timedelta(days=5)
+
+            if end_date:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59
+                )
+            else:
+                end_dt = datetime.now().replace(hour=23, minute=59, second=59)
+
+            query = query.filter(GPTBlueprint.created_at.between(start_dt, end_dt))
+        else:
+            # For other modes, filter by brand_ids
+            query = query.filter(GPTBlueprint.brand_id.in_(brand_ids))
+
+        results = query.order_by(desc(GPTBlueprint.created_at)).all()
         session.close()
         ads = []
         for r in results:
@@ -583,20 +638,13 @@ def get_combined_ads(
     for batch in results:
         all_ads.extend(batch)
 
-    # Get brand creation dates for sorting
-    brand_dates = {}
-    if all_ads:
-        brand_ids_in_ads = list(set(ad["brand_id"] for ad in all_ads))
-        brand_date_results = (
-            session.query(Brand.id, Brand.created_at)
-            .filter(Brand.id.in_(brand_ids_in_ads))
-            .all()
-        )
-        brand_dates = {r.id: r.created_at for r in brand_date_results}
-
-    # Sort ads by brand creation date in descending order
+    # Sort ads by ad creation timestamp in descending order (newest first)
+    # Note: Date filtering is now done at the database level in each fetch function
     all_ads.sort(
-        key=lambda ad: brand_dates.get(ad["brand_id"], datetime.min), reverse=True
+        key=lambda ad: datetime.fromisoformat(ad["timestamp"].replace("Z", "+00:00"))
+        if ad.get("timestamp")
+        else datetime.min,
+        reverse=True,
     )
 
     # Apply pagination
@@ -783,10 +831,16 @@ async def fetch_combined_ads(
                 # Direct brand ID search
                 brand_ids = parse_brand_ids(brand_id)
             elif brands is True:
-                # Latest brands filter - get active brands within date range
-                brand_ids = get_latest_brands(
-                    session=session, start_date=start_date, end_date=end_date
-                )
+                # All Ads mode - we'll filter by date at the database level in each table
+                # Pass empty list as brand_ids since filtering is done by date in fetch functions
+                brand_ids = []
+
+                # For "All Ads" mode, if no dates provided, default to last 5 days
+                if not start_date and not end_date:
+                    end_date = datetime.now().strftime("%Y-%m-%d")
+                    start_date = (datetime.now() - timedelta(days=5)).strftime(
+                        "%Y-%m-%d"
+                    )
             else:
                 # Search by industry/country with date filtering
                 if not industry and not country:
@@ -804,7 +858,8 @@ async def fetch_combined_ads(
                     limit=limit,
                 )
 
-            if not brand_ids:
+            # Only check for empty brand_ids if not in "All Ads" mode
+            if not brand_ids and not brands:
                 return CombinedAdsResponse(
                     ads=[],
                     pagination=create_pagination_metadata(page, page_size, 0),
@@ -813,23 +868,39 @@ async def fetch_combined_ads(
                 )
 
             # Get ads and feedback
-            # Execute get_combined_ads and get_existing_feedback in parallel using ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                future_ads = executor.submit(
-                    get_combined_ads, session, brand_ids, page, page_size, source_filter
+            ads, total_count = get_combined_ads(
+                session, brand_ids, page, page_size, source_filter, start_date, end_date
+            )
+
+            # For "All Ads" mode, we'll get feedback after we have the ads and their brand_ids
+            if brands and ads:
+                # Extract brand_ids from the ads we found
+                found_brand_ids = list(set(ad["brand_id"] for ad in ads))
+                feedback, _ = get_existing_feedback(
+                    session, found_brand_ids, page, page_size
                 )
-                future_feedback = executor.submit(
-                    get_existing_feedback, session, brand_ids, page, page_size
-                )
-                ads, total_count = future_ads.result()
-                feedback, _ = future_feedback.result()
+            elif brand_ids:
+                # For other modes, use the original brand_ids
+                feedback, _ = get_existing_feedback(session, brand_ids, page, page_size)
+            else:
+                feedback = {}
 
             pagination = create_pagination_metadata(page, page_size, total_count)
+
+            # Calculate brand count
+            if brands and ads:
+                # For "All Ads" mode, count unique brands from the ads we found
+                brand_count = len(set(ad["brand_id"] for ad in ads))
+            elif brand_ids:
+                # For other modes, use the original brand_ids count
+                brand_count = len(brand_ids) if isinstance(brand_ids, list) else 1
+            else:
+                brand_count = 0
 
             return CombinedAdsResponse(
                 ads=[AdModel(**ad) for ad in ads],
                 pagination=pagination,
-                brand_count=len(brand_ids) if isinstance(brand_ids, list) else 1,
+                brand_count=brand_count,
                 existing_feedback=feedback,
             )
 

@@ -483,7 +483,7 @@
                         </div>
                         <div class="radio-item" data-mode="brands">
                             <input type="radio" name="search_mode" value="brands">
-                            <span>Only Latest Brands</span>
+                            <span>All Ads</span>
                         </div>
                     </div>
                 </div>
@@ -572,7 +572,7 @@
                     </div>
 
                     <div id="brands-input" class="hidden">
-                        <label>📅 Select Date Range for Latest Brands</label>
+                        <label>📅 Select Date Range for All Ads</label>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px;">
                             <div>
                                 <label for="brandsStartDate">Start Date:</label>
@@ -584,7 +584,29 @@
                             </div>
                         </div>
                         <div style="margin-top: 10px; padding: 10px; background: #e8f4fd; border-radius: 8px; font-size: 14px; color: #0066cc;">
-                            💡 This will fetch all active brands within the selected date range (defaults to last 10 days)
+                            💡 This will fetch all active brands within the selected date range (defaults to last 5 days)
+                        </div>
+                        
+                        <div style="margin-top: 15px;">
+                            <label>🎯 Filter by Source:</label>
+                            <div class="radio-group" style="grid-template-columns: repeat(2, 1fr); margin-top: 10px;">
+                                <div class="radio-item active" data-source-brands="all">
+                                    <input type="radio" name="source_filter_brands" value="all" checked>
+                                    <span>🌟 All Sources</span>
+                                </div>
+                                <div class="radio-item" data-source-brands="onboarding_ads">
+                                    <input type="radio" name="source_filter_brands" value="onboarding_ads">
+                                    <span>🚀 Onboarding Ads</span>
+                                </div>
+                                <div class="radio-item" data-source-brands="ad_central">
+                                    <input type="radio" name="source_filter_brands" value="ad_central">
+                                    <span>🎯 Ad Central</span>
+                                </div>
+                                <div class="radio-item" data-source-brands="creative_brief">
+                                    <input type="radio" name="source_filter_brands" value="creative_brief">
+                                    <span>📝 Creative Brief</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -782,7 +804,7 @@
             });
         });
 
-        // Source filter event listeners
+        // Source filter event listeners (Brand ID mode)
         const sourceFilterItems = document.querySelectorAll('.radio-item[data-source]');
         sourceFilterItems.forEach(item => {
             item.addEventListener('click', () => {
@@ -790,6 +812,17 @@
                 item.classList.add('active');
                 item.querySelector('input').checked = true;
                 console.log('🎯 Source filter changed to:', item.dataset.source);
+            });
+        });
+
+        // Source filter event listeners (Brands/All Ads mode)
+        const sourceBrandsFilterItems = document.querySelectorAll('.radio-item[data-source-brands]');
+        sourceBrandsFilterItems.forEach(item => {
+            item.addEventListener('click', () => {
+                sourceBrandsFilterItems.forEach(r => r.classList.remove('active'));
+                item.classList.add('active');
+                item.querySelector('input').checked = true;
+                console.log('🎯 Brands source filter changed to:', item.dataset.sourceBrands);
             });
         });
 
@@ -925,6 +958,13 @@
                     console.log('🏢 Brands filter mode selected');
                     params.append('brands', 'true');
                     addBrandsDateParameters(params);
+                    
+                    // Add source filter for brands mode
+                    const brandsSourceFilter = document.querySelector('input[name="source_filter_brands"]:checked').value;
+                    console.log('🎯 Brands source filter value:', brandsSourceFilter);
+                    if (brandsSourceFilter && brandsSourceFilter !== 'all') {
+                        params.append('source_filter', brandsSourceFilter);
+                    }
                     console.log('✅ Brands mode - parameters set');
                     break;
             }
@@ -1111,6 +1151,13 @@
                     console.log('🏢 Brands filter pagination');
                     params.append('brands', 'true');
                     addBrandsDateParameters(params);
+                    
+                    // Add source filter for brands pagination
+                    const paginationBrandsSourceFilter = document.querySelector('input[name="source_filter_brands"]:checked').value;
+                    console.log('🎯 Pagination brands source filter value:', paginationBrandsSourceFilter);
+                    if (paginationBrandsSourceFilter && paginationBrandsSourceFilter !== 'all') {
+                        params.append('source_filter', paginationBrandsSourceFilter);
+                    }
                     console.log('✅ Brands pagination - parameters set');
                     break;
                 default:
@@ -1437,16 +1484,18 @@
             showAlert('✅ All ads and feedback cleared successfully!', 'success');
         }
 
-        // Initialize date inputs with default values (10 days ago to today)
+        // Initialize date inputs with default values
         function initializeDateInputs() {
             const today = new Date();
             const tenDaysAgo = new Date(today.getTime() - (10 * 24 * 60 * 60 * 1000));
+            const fiveDaysAgo = new Date(today.getTime() - (5 * 24 * 60 * 60 * 1000));
             
+            // For other filters (Industry, Country, etc.) - use 10 days
             document.getElementById('startDate').value = tenDaysAgo.toISOString().split('T')[0];
             document.getElementById('endDate').value = today.toISOString().split('T')[0];
             
-            // Initialize brands date inputs with the same default values
-            document.getElementById('brandsStartDate').value = tenDaysAgo.toISOString().split('T')[0];
+            // For "All Ads" mode - use 5 days
+            document.getElementById('brandsStartDate').value = fiveDaysAgo.toISOString().split('T')[0];
             document.getElementById('brandsEndDate').value = today.toISOString().split('T')[0];
         }
 
