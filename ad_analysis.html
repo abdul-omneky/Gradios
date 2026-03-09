@@ -1,0 +1,578 @@
+<!-- pm2 start "python -m http.server 1995" --name ads_analysis -->
+<!-- python3 -m http.server 1995 --directory /home/paperspace/ai/AbdulResearchModels/Gradios -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ad Generation Analytics</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap');
+    :root{
+      --bg:#02060d;--panel:#0c1422;--panelSoft:#111c2c;--panelBorder:#2a3d59;--muted:#b7c5d8;--muted2:#4a607f;
+      --txt:#f8fbff;--txtDim:#d2deec;--accent:#57d0ff;--accentSoft:rgba(87,208,255,.22);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:
+        radial-gradient(circle at 10% -20%, rgba(87,208,255,.12), transparent 40%),
+        radial-gradient(circle at 100% 0%, rgba(167,139,250,.06), transparent 30%),
+        var(--bg);
+      color:var(--txt);
+      font-family:'DM Mono','Courier New',monospace;
+      font-size:14px;
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+    }
+    .page{min-height:100vh; padding:28px 32px; max-width:1500px; margin:0 auto;}
+    .header{
+      display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:28px;
+    }
+    .badge{font-size:12px; letter-spacing:.18em; color:var(--accent); text-transform:uppercase; margin-bottom:4px}
+    .title{
+      margin:0; font-family:'Syne',sans-serif; font-size:42px; font-weight:800;
+      color:#f8fbff;
+    }
+    .sub{font-size:14px; color:var(--txtDim)}
+    .controls{
+      display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:24px;
+      padding:14px 18px; background:rgba(15,23,36,.8); border-radius:12px; border:1px solid var(--panelBorder);
+      backdrop-filter: blur(6px);
+      box-shadow:0 10px 30px rgba(0,0,0,.25);
+    }
+    .sep{width:1px; height:20px; background:var(--panelBorder); margin:0 4px}
+    .label{font-size:12px; letter-spacing:.1em; color:var(--txtDim); margin-right:4px}
+    .btn{
+      cursor:pointer; border:1px solid var(--muted2); background:#12233a; color:#dbe8f5; padding:9px 16px; border-radius:8px;
+      font-family:inherit; font-size:13px; letter-spacing:.04em; transition:all .2s ease;
+    }
+    .btn:hover{border-color:var(--accent); color:var(--accent); transform:translateY(-1px); box-shadow:0 4px 14px rgba(56,189,248,.12)}
+    .btn.active{border-color:var(--accent); background:#0a2940; color:var(--accent); box-shadow:0 0 0 1px var(--accentSoft) inset}
+    .sel, .date, .text{
+      background:#0f1d31; border:1px solid var(--muted2); color:#ecf3fa; padding:9px 11px; border-radius:8px; font-family:inherit; font-size:13px; outline:none; transition:border-color .2s, box-shadow .2s
+    }
+    .sel:focus, .date:focus, .text:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(56,189,248,.14)}
+    .grid-kpi{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:24px}
+    .kpi{
+      background:linear-gradient(135deg,#142136,#0d1829);
+      border:1px solid rgba(56,189,248,.16); border-radius:12px; padding:18px 20px; position:relative; overflow:hidden;
+      transition:transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+    }
+    .kpi:hover{transform:translateY(-2px); box-shadow:0 10px 30px rgba(0,0,0,.35); border-color:rgba(56,189,248,.3)}
+    .kpi .ghost{position:absolute; top:0; right:0; width:60px; height:60px; background:var(--accent); opacity:.04; border-radius:0 12px 0 60px}
+    .kpi .name{font-size:12px; letter-spacing:.12em; color:var(--txtDim); margin-bottom:8px; text-transform:uppercase}
+    .kpi .val{font-size:40px; font-weight:600; color:var(--accent); line-height:1; margin-bottom:6px}
+    .kpi .sub{display:flex; justify-content:space-between; align-items:flex-end; font-size:13px; color:var(--txtDim)}
+    .mid{display:grid; grid-template-columns:220px 1fr 1fr; gap:14px; margin-bottom:24px}
+    .panel{
+      background:linear-gradient(180deg, rgba(17,28,44,.95), rgba(14,22,35,.95));
+      border:1px solid var(--panelBorder); border-radius:12px; padding:18px;
+      box-shadow:0 8px 24px rgba(0,0,0,.24);
+    }
+    .panel .cap{font-size:12px; letter-spacing:.12em; color:var(--txtDim); margin-bottom:14px}
+    .sort-filter{display:flex; flex-direction:column; gap:12px}
+    .sort-row{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:nowrap;
+      overflow-x:auto;
+      padding-bottom:2px;
+    }
+    .filter-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+    .filter-row #searchBrand{min-width:240px; flex:1}
+    .vlist{display:flex; flex-direction:column; gap:13px}
+    .row{display:flex; justify-content:space-between; margin-bottom:5px}
+    .name2{font-size:14px; color:#dbe8f5}
+    .val2{font-size:14px; font-weight:600}
+    .minibar{background:#1a1f2e; border-radius:4px; height:6px; width:100%; overflow:hidden}
+    .minibar > div{height:100%; border-radius:4px; transition:width .6s ease}
+    .table{
+      background:linear-gradient(180deg, rgba(17,28,44,.95), rgba(14,22,35,.95));
+      border:1px solid var(--panelBorder); border-radius:12px; padding:20px; box-shadow:0 8px 24px rgba(0,0,0,.24);
+    }
+    .t-head, .t-row{
+      display:grid; grid-template-columns: 180px 80px repeat(6, 1fr);
+      gap:8px; padding:8px 12px;
+    }
+    .t-head{border-bottom:1px solid var(--panelBorder); margin-bottom:4px}
+    .t-h{font-size:12px; letter-spacing:.08em; color:var(--txtDim); text-transform:uppercase}
+    .t-head .t-h{
+      white-space:normal;
+      overflow-wrap:anywhere;
+      line-height:1.25;
+    }
+    .t-row{border-bottom:1px solid #0f1724; border-radius:8px; transition:background .2s ease, transform .2s ease}
+    .t-row:hover{background:#1a283a; transform:translateX(2px)}
+    .t-name{font-size:15px; color:var(--txt); font-weight:600}
+    .t-ads{font-size:15px; color:var(--accent)}
+    .t-cell{display:flex; flex-direction:column; gap:3px}
+    .t-cell span{font-size:13px}
+    .foot{margin-top:20px; font-size:12px; color:var(--txtDim); letter-spacing:.08em; text-align:center}
+    .err{color:#f87171; font-size:14px; margin-top:6px}
+    .muted{color:var(--txtDim)}
+    .loading-overlay{
+      position:fixed; inset:0; z-index:9999; background:rgba(7,11,20,.66);
+      backdrop-filter: blur(3px);
+      display:none; align-items:center; justify-content:center;
+    }
+    .loading-overlay.show{display:flex}
+    .loading-card{
+      min-width:220px; padding:16px 20px; border-radius:12px;
+      border:1px solid rgba(56,189,248,.3);
+      background:rgba(15,23,36,.9);
+      box-shadow:0 14px 34px rgba(0,0,0,.42);
+      display:flex; align-items:center; gap:12px;
+    }
+    .spinner{
+      width:18px; height:18px; border:2px solid rgba(56,189,248,.22); border-top-color:var(--accent);
+      border-radius:50%; animation:spin .85s linear infinite;
+    }
+    .loading-text{font-size:13px; color:#ecf3fa; letter-spacing:.06em}
+    .is-loading .controls .btn, .is-loading .controls .sel, .is-loading .controls .date, .is-loading .controls .text{pointer-events:none; opacity:.65}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @media (max-width: 1180px){
+      .mid{grid-template-columns:1fr}
+    }
+    @media (max-width: 768px){
+      .page{padding:18px 14px}
+      .controls{padding:12px}
+      .title{font-size:32px}
+      .sort-row{flex-wrap:wrap; overflow-x:visible}
+      .t-head, .t-row{grid-template-columns:160px 70px repeat(6, minmax(70px, 1fr))}
+    }
+    ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:#0d1117}::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div>
+        <div class="badge">Creative Intelligence</div>
+        <h1 class="title">Ad Generation Analytics</h1>
+      </div>
+      <div class="sub"><span id="lastUpdated">Loading…</span></div>
+    </div>
+
+    <div class="controls">
+      <span class="label">RANGE</span>
+      <button class="btn active" data-range="7">7d</button>
+      <button class="btn" data-range="15">15d</button>
+      <button class="btn" data-range="30">30d</button>
+      <button class="btn" data-range="60">60d</button>
+      <div class="sep"></div>
+      <span class="label">CUSTOM</span>
+      <input id="startDate" class="date" type="date" />
+      <span class="muted">→</span>
+      <input id="endDate" class="date" type="date" />
+      <div class="sep"></div>
+      <span class="label">BRAND IDs</span>
+      <input id="brandIds" class="text" placeholder="e.g. 12,34 (leave empty for all)" style="min-width:240px" />
+      <div class="sep"></div>
+      <span class="label">SOURCE</span>
+      <select id="sourceFilter" class="sel">
+        <option value="all">All</option>
+        <option value="onboarding_ads">Onboarding</option>
+        <option value="ad_central">Ad Central</option>
+        <option value="creative_brief">Creative Brief</option>
+        <option value="avatar_ads">Avatar Video</option>
+        <option value="clone_video">Clone Video</option>
+        <option value="product_animation">Product Animation</option>
+        <option value="commercial_24s">24s Commercial</option>
+      </select>
+      <button id="applyBtn" class="btn">Apply</button>
+      <span id="error" class="err" style="display:none"></span>
+    </div>
+
+    <div class="grid-kpi">
+      <div class="kpi">
+        <div class="ghost"></div>
+        <div class="name">Total Ads</div>
+        <div id="kpiTotalAds" class="val">—</div>
+        <div class="sub">generated</div>
+      </div>
+      <div class="kpi">
+        <div class="ghost"></div>
+        <div class="name">Brands that Generated Ads</div>
+        <div id="kpiBrands" class="val" style="color:#a78bfa">—</div>
+        <div class="sub">brands</div>
+      </div>
+    </div>
+
+    <div class="mid">
+      <div class="panel">
+        <div class="cap">AD TYPE MIX</div>
+        <div id="donut"></div>
+        <div id="legend" style="margin-top:12px; display:flex; flex-direction:column; gap:4px"></div>
+      </div>
+      <div class="panel">
+        <div class="cap">AD TYPE BREAKDOWN</div>
+        <div id="adTypeBars" class="vlist"></div>
+      </div>
+      <div class="panel">
+        <div class="cap">SORT & FILTER</div>
+        <div class="sort-filter">
+          <div class="sort-row">
+          <span class="label">SORT BY</span>
+          <button class="btn sort" data-sort="total">TOTAL</button>
+          <button class="btn sort" data-sort="Image Ad">IMAGE</button>
+          <button class="btn sort" data-sort="Clone Video">CLONE</button>
+          <button class="btn sort" data-sort="Avatar">AVATAR</button>
+          <button class="btn sort" data-sort="Product Animation">PRODUCT ANIM</button>
+          <button class="btn sort" data-sort="24s Commercial">24S</button>
+          </div>
+          <div class="filter-row">
+          <span class="label">FILTER</span>
+          <input id="searchBrand" class="text" placeholder="Filter brands..." />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="table">
+      <div class="t-head" id="thead"></div>
+      <div id="tbody"></div>
+      <div id="nodata" class="muted" style="text-align:center; padding:40px; display:none">No data for selected filters</div>
+    </div>
+
+    <div class="foot" id="footer">AD GENERATION ANALYTICS · DATA RANGE: —</div>
+  </div>
+  <div id="loadingOverlay" class="loading-overlay" aria-live="polite" aria-busy="true">
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <div class="loading-text">Loading analytics...</div>
+    </div>
+  </div>
+
+  <script>
+    // ---- Config ----
+    const API_BASE = (() => {
+      if (location.protocol === 'file:') return 'http://localhost:5858';
+      if (location.origin.includes(':5858')) return location.origin;
+      const host = location.hostname || 'localhost';
+      return `http://${host}:5858`;
+    })();
+    const AD_COLORS = {
+      "Image Ad":          "#38bdf8",
+      "Clone Video":       "#a78bfa",
+      "Avatar":            "#fb923c",
+      "Avatar Video":      "#fb923c",
+      "Avatar + Product":  "#34d399",
+      "Product Animation": "#f472b6",
+      "24s Commercial":    "#facc15",
+    };
+
+    // ---- State ----
+    const state = {
+      rangeDays: 7,
+      customStart: "",
+      customEnd: "",
+      source: "all",
+      brandIds: "",
+      data: null,
+      sortBy: "total",
+      brandQuery: "",
+    };
+
+    // ---- Utils ----
+    function fmt(n){ if(n>=1_000_000) return (n/1_000_000).toFixed(1)+'M'; if(n>=1_000) return (n/1_000).toFixed(1)+'K'; return String(n); }
+    function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
+    function today(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
+    function addDays(d, n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+    function setLoading(isLoading){
+      const overlay = document.getElementById('loadingOverlay');
+      overlay.classList.toggle('show', isLoading);
+      document.body.classList.toggle('is-loading', isLoading);
+      const applyBtn = document.getElementById('applyBtn');
+      applyBtn.textContent = isLoading ? 'Applying...' : 'Apply';
+    }
+    function setActiveRangeBtn(days){
+      document.querySelectorAll('.btn[data-range]').forEach(b=>b.classList.toggle('active', String(days)===b.dataset.range));
+    }
+
+    // ---- Fetch ----
+    async function fetchSummary(){
+      const errEl = document.getElementById('error');
+      errEl.style.display='none'; errEl.textContent='';
+
+      // dates
+      let start = state.customStart;
+      let end = state.customEnd;
+      if(!start || !end){
+        const endD = today();
+        const startD = addDays(endD, -state.rangeDays+1);
+        start = ymd(startD); end = ymd(endD);
+      }
+
+      // query
+      const params = new URLSearchParams();
+      if(state.brandIds && state.brandIds.trim()){
+        params.set('brand_id', state.brandIds.trim());
+      }else{
+        params.set('brands','true');
+      }
+      params.set('start_date', start);
+      params.set('end_date', end);
+      params.set('source_filter', state.source || 'all');
+      params.set('include_rows','false');
+
+      const url = `${API_BASE}/api/analytics/ad_generation_summary?${params.toString()}`;
+      console.log('Fetching:', url);
+      setLoading(true);
+      try{
+        const r = await fetch(url, { headers: { accept: 'application/json' }});
+        if(!r.ok) throw new Error(`HTTP ${r.status}`);
+        const json = await r.json();
+        state.data = json;
+        renderAll();
+        document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toString().slice(0,24)} · ${fmt(json.total_ads)} ads`;
+        document.getElementById('footer').textContent = `AD GENERATION ANALYTICS · DATA RANGE: ${start} → ${end}`;
+      }catch(e){
+        errEl.style.display='inline';
+        errEl.textContent = `Failed to load: ${e.message}`;
+      }finally{
+        setLoading(false);
+      }
+    }
+
+    // ---- Renderers ----
+    function renderKPIs(){
+      if(!state.data){ return; }
+      document.getElementById('kpiTotalAds').textContent = fmt(state.data.total_ads);
+      document.getElementById('kpiBrands').textContent = fmt(state.data.total_brands);
+    }
+
+    function renderDonut(){
+      const mount = document.getElementById('donut');
+      const legend = document.getElementById('legend');
+      mount.innerHTML = ''; legend.innerHTML='';
+      if(!state.data){ return; }
+      const adTypes = state.data.ad_types || [];
+      const totals = state.data.totals || {};
+      const data = adTypes.map(t=>({label:t, value: totals[t]||0}));
+      const total = data.reduce((s,d)=>s+d.value,0);
+      const size=160, r=56, cx=80, cy=80, stroke=20;
+      let angle = -Math.PI/2;
+      const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+      svg.setAttribute('width', size); svg.setAttribute('height', size); svg.setAttribute('viewBox','0 0 160 160');
+      data.forEach(d=>{
+        if(total===0) return;
+        const sweep = (d.value/total)*2*Math.PI;
+        const x1 = cx + r*Math.cos(angle), y1 = cy + r*Math.sin(angle);
+        angle += sweep;
+        const x2 = cx + r*Math.cos(angle), y2 = cy + r*Math.sin(angle);
+        const large = sweep > Math.PI ? 1 : 0;
+        const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+        p.setAttribute('d', `M${x1},${y1} A${r},${r} 0 ${large} 1 ${x2},${y2}`);
+        p.setAttribute('fill','none');
+        p.setAttribute('stroke', AD_COLORS[d.label] || '#64748b');
+        p.setAttribute('stroke-width', stroke);
+        p.setAttribute('stroke-linecap','butt');
+        p.style.filter = `drop-shadow(0 0 4px ${(AD_COLORS[d.label]||'#64748b')}66)`;
+        svg.appendChild(p);
+      });
+      const t1 = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t1.setAttribute('x','80'); t1.setAttribute('y','78');
+      t1.setAttribute('text-anchor','middle'); t1.setAttribute('fill','#f1f5f9');
+      t1.setAttribute('font-size','24'); t1.setAttribute('font-weight','700');
+      t1.setAttribute('font-family',"'DM Mono', monospace");
+      t1.textContent = total;
+      const t2 = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t2.setAttribute('x','80'); t2.setAttribute('y','98');
+      t2.setAttribute('text-anchor','middle'); t2.setAttribute('fill','#64748b');
+      t2.setAttribute('font-size','12'); t2.setAttribute('font-family',"'DM Mono', monospace");
+      t2.textContent = 'TOTAL ADS';
+      svg.appendChild(t1); svg.appendChild(t2);
+      mount.appendChild(svg);
+
+      // legend
+      adTypes.forEach(t=>{
+        const row = document.createElement('div');
+        row.style.display='flex'; row.style.alignItems='center'; row.style.gap='6px';
+        const dot = document.createElement('div');
+        dot.style.width='10px'; dot.style.height='10px'; dot.style.borderRadius='50%';
+        dot.style.background = AD_COLORS[t] || '#64748b';
+        const label = document.createElement('div');
+        label.style.fontSize='13px'; label.style.color='#d2deec'; label.style.flex='1';
+        label.style.whiteSpace='nowrap'; label.style.overflow='hidden'; label.style.textOverflow='ellipsis';
+        label.textContent = t;
+        row.appendChild(dot); row.appendChild(label);
+        legend.appendChild(row);
+      });
+    }
+
+    function renderAdTypeBars(){
+      const mount = document.getElementById('adTypeBars');
+      mount.innerHTML='';
+      if(!state.data){ return; }
+      const adTypes = state.data.ad_types || [];
+      const totals = state.data.totals || {};
+      const items = adTypes.map(t=>({label:t, value: totals[t]||0})).sort((a,b)=>b.value-a.value);
+      const max = Math.max(1, ...items.map(i=>i.value));
+      items.forEach(d=>{
+        const wrap = document.createElement('div');
+        const row = document.createElement('div');
+        row.className='row';
+        const l = document.createElement('span'); l.className='name2'; l.textContent=d.label;
+        const v = document.createElement('span'); v.className='val2'; v.style.color = AD_COLORS[d.label] || '#64748b'; v.textContent = d.value;
+        row.appendChild(l); row.appendChild(v);
+        const bar = document.createElement('div'); bar.className='minibar';
+        const fill = document.createElement('div'); fill.style.width = (d.value/max*100)+'%'; fill.style.background = AD_COLORS[d.label] || '#64748b';
+        bar.appendChild(fill);
+        wrap.appendChild(row); wrap.appendChild(bar);
+        mount.appendChild(wrap);
+      });
+    }
+
+    function buildTableHead(){
+      const thead = document.getElementById('thead');
+      thead.innerHTML='';
+      const adTypes = getTableAdTypes();
+      const headers = ['Brand','Ads', ...adTypes];
+      thead.style.gridTemplateColumns = `180px 80px repeat(${adTypes.length}, minmax(92px, 1fr))`;
+      headers.forEach(h=>{
+        const d = document.createElement('div');
+        d.className='t-h'; d.textContent=h;
+        thead.appendChild(d);
+      });
+    }
+
+    function getTableAdTypes(){
+      const src = (state.data && state.data.ad_types) || [];
+      const merged = [];
+      let avatarAdded = false;
+      src.forEach(t=>{
+        if(t === 'Avatar Video' || t === 'Avatar + Product'){
+          if(!avatarAdded){
+            merged.push('Avatar');
+            avatarAdded = true;
+          }
+          return;
+        }
+        merged.push(t);
+      });
+      return merged;
+    }
+
+    function getTableCount(counts, adType){
+      if(adType === 'Avatar'){
+        return (counts?.['Avatar Video'] || 0) + (counts?.['Avatar + Product'] || 0);
+      }
+      return counts?.[adType] || 0;
+    }
+
+    function renderTable(){
+      const tbody = document.getElementById('tbody');
+      const nodata = document.getElementById('nodata');
+      tbody.innerHTML=''; nodata.style.display='none';
+      if(!state.data){ nodata.style.display='block'; return; }
+      const adTypes = getTableAdTypes();
+      let rows = (state.data.brand_counts || []).map(b=>{
+        const total = adTypes.reduce((s,t)=>s+getTableCount(b.counts || {}, t),0);
+        const hasBrandId = b.brand_id !== null && b.brand_id !== undefined && b.brand_id !== '';
+        const hasBrandName = !!(b.brand_name && String(b.brand_name).trim());
+        const brandLabel = hasBrandName
+          ? `${hasBrandId ? `[${b.brand_id}] ` : ''}${b.brand_name}`
+          : (hasBrandId ? `[${b.brand_id}]` : 'Unknown Brand');
+        return { brand: brandLabel, total, counts: b.counts || {} };
+      });
+
+      // search filter
+      if(state.brandQuery){
+        const q = state.brandQuery.toLowerCase();
+        rows = rows.filter(r=>r.brand.toLowerCase().includes(q));
+      }
+
+      // sort
+      const key = state.sortBy;
+      rows.sort((a,b)=>{
+        if(key==='total') return b.total - a.total;
+        return getTableCount(b.counts, key) - getTableCount(a.counts, key);
+      });
+
+      if(rows.length===0){ nodata.style.display='block'; return; }
+
+      const maxAds = Math.max(1, ...rows.map(r=>r.total));
+      rows.forEach((r,i)=>{
+        const row = document.createElement('div');
+        row.className='t-row';
+        row.style.gridTemplateColumns = `180px 80px repeat(${adTypes.length}, minmax(92px, 1fr))`;
+        const cBrand = document.createElement('div'); cBrand.className='t-name'; cBrand.textContent = r.brand;
+        const cAds = document.createElement('div'); cAds.className='t-ads'; cAds.textContent = r.total;
+        row.appendChild(cBrand); row.appendChild(cAds);
+        adTypes.forEach(t=>{
+          const wrap = document.createElement('div'); wrap.className='t-cell';
+          const n = getTableCount(r.counts, t);
+          const s = document.createElement('span');
+          s.style.color = n>0 ? (AD_COLORS[t]||'#64748b') : '#1e2a3a';
+          s.textContent = n>0 ? n : '—';
+          wrap.appendChild(s);
+          if(n>0){
+            const mini = document.createElement('div'); mini.style.height='2px';
+            mini.style.width = (n/r.total*100)+'%'; mini.style.background = (AD_COLORS[t]||'#64748b');
+            mini.style.borderRadius='1px'; mini.style.opacity='.6';
+            wrap.appendChild(mini);
+          }
+          row.appendChild(wrap);
+        });
+        tbody.appendChild(row);
+      });
+    }
+
+    function renderAll(){
+      renderKPIs();
+      renderDonut();
+      renderAdTypeBars();
+      buildTableHead();
+      renderTable();
+    }
+
+    // ---- Events ----
+    document.querySelectorAll('.btn[data-range]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        state.rangeDays = parseInt(btn.dataset.range,10);
+        state.customStart = ""; state.customEnd = "";
+        document.getElementById('startDate').value = "";
+        document.getElementById('endDate').value = "";
+        setActiveRangeBtn(state.rangeDays);
+        fetchSummary();
+      });
+    });
+    document.getElementById('applyBtn').addEventListener('click', ()=>{
+      state.customStart = document.getElementById('startDate').value || "";
+      state.customEnd   = document.getElementById('endDate').value || "";
+      state.brandIds    = document.getElementById('brandIds').value || "";
+      state.source      = document.getElementById('sourceFilter').value || "all";
+      // when custom is set, visually unselect range
+      if(state.customStart && state.customEnd){ setActiveRangeBtn(''); }
+      fetchSummary();
+    });
+    document.querySelectorAll('.sort').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        document.querySelectorAll('.sort').forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+        state.sortBy = b.dataset.sort;
+        renderTable();
+      });
+    });
+    document.getElementById('searchBrand').addEventListener('input', (e)=>{
+      state.brandQuery = e.target.value || "";
+      renderTable();
+    });
+
+    // ---- Init ----
+    (function init(){
+      // default sort active
+      document.querySelector('.sort[data-sort="total"]').classList.add('active');
+      // default end-date max today
+      const endEl = document.getElementById('endDate');
+      const startEl = document.getElementById('startDate');
+      const td = today(); const ymdToday = ymd(td);
+      endEl.max = ymdToday; startEl.max = ymdToday;
+      fetchSummary();
+    })();
+  </script>
+</body>
+</html>
+

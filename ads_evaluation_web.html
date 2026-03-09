@@ -210,6 +210,15 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
 
+        .ad-video {
+            width: 100%;
+            max-width: 400px;
+            height: auto;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
         .ad-title {
             font-size: 1.2rem;
             font-weight: 600;
@@ -257,6 +266,12 @@
             background: linear-gradient(135deg, #fd7e14 0%, #e83e8c 100%);
             color: white;
             border: 2px solid #fd7e14;
+        }
+
+        .ad-source.avatar_ads {
+            background: linear-gradient(135deg, #6f42c1 0%, #e83e8c 100%);
+            color: white;
+            border: 2px solid #6f42c1;
         }
 
         .feedback-section {
@@ -495,7 +510,7 @@
                         
                         <div style="margin-top: 15px;">
                             <label>🎯 Filter by Source:</label>
-                            <div class="radio-group" style="grid-template-columns: repeat(2, 1fr); margin-top: 10px;">
+                            <div class="radio-group" style="grid-template-columns: repeat(3, 1fr); margin-top: 10px;">
                                 <div class="radio-item active" data-source="all">
                                     <input type="radio" name="source_filter" value="all" checked>
                                     <span>🌟 All Sources</span>
@@ -511,6 +526,10 @@
                                 <div class="radio-item" data-source="creative_brief">
                                     <input type="radio" name="source_filter" value="creative_brief">
                                     <span>📝 Creative Brief</span>
+                                </div>
+                                <div class="radio-item" data-source="avatar_ads">
+                                    <input type="radio" name="source_filter" value="avatar_ads">
+                                    <span>🎭 Avatar Ads</span>
                                 </div>
                             </div>
                         </div>
@@ -589,7 +608,7 @@
                         
                         <div style="margin-top: 15px;">
                             <label>🎯 Filter by Source:</label>
-                            <div class="radio-group" style="grid-template-columns: repeat(2, 1fr); margin-top: 10px;">
+                            <div class="radio-group" style="grid-template-columns: repeat(3, 1fr); margin-top: 10px;">
                                 <div class="radio-item active" data-source-brands="all">
                                     <input type="radio" name="source_filter_brands" value="all" checked>
                                     <span>🌟 All Sources</span>
@@ -605,6 +624,10 @@
                                 <div class="radio-item" data-source-brands="creative_brief">
                                     <input type="radio" name="source_filter_brands" value="creative_brief">
                                     <span>📝 Creative Brief</span>
+                                </div>
+                                <div class="radio-item" data-source-brands="avatar_ads">
+                                    <input type="radio" name="source_filter_brands" value="avatar_ads">
+                                    <span>🎭 Avatar Ads</span>
                                 </div>
                             </div>
                         </div>
@@ -764,6 +787,11 @@
                     icon: '📝',
                     label: 'Creative Brief',
                     description: 'Generated from creative brief'
+                },
+                'avatar_ads': {
+                    icon: '🎭',
+                    label: 'Avatar Ads',
+                    description: 'Generated using HeyGen Avatar technology'
                 }
             };
             
@@ -1294,7 +1322,12 @@
                     <div class="ad-title">Generated Ad #${index + 1} (Brand ${ad.brand_id})</div>
                     ${ad.generated_by ? `<div class="ad-source ${ad.generated_by}">${formatGeneratedBy(ad.generated_by)}</div>` : ''}
                     ${ad.timestamp ? `<div class="ad-timestamp">🕒 Generated: ${formatTimestamp(ad.timestamp)}</div>` : ''}
-                    <img src="${ad.generated_ad}" alt="Generated Ad" class="ad-image" onerror="this.style.display='none'">
+                    ${ad.generated_by === 'avatar_ads' ? 
+                        `<video src="${ad.generated_ad}" class="ad-video" controls preload="metadata" onerror="this.style.display='none'">
+                            <p>Your browser doesn't support HTML5 video. <a href="${ad.generated_ad}">Download the video</a> instead.</p>
+                        </video>` :
+                        `<img src="${ad.generated_ad}" alt="Generated Ad" class="ad-image" onerror="this.style.display='none'">`
+                    }
                     
                     <div class="feedback-section">
                         <div class="feedback-title">🖼️ Generated Ad Feedback</div>

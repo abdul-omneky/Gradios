@@ -14,7 +14,7 @@ from database_file import close_connections, get_session
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, desc
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, desc, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase
 
@@ -105,6 +105,40 @@ class HeygenAvatarProductVideoGenerationLogs(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     e2e = Column(Boolean, nullable=True)
     source_environment = Column(Text, nullable=True)
+
+
+class CloneAds(Base):
+    __tablename__ = "clone_ads"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    brand_id = Column(Integer, nullable=True)
+    final_video_url = Column(Text, nullable=True)
+    source_environment = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class ProductVideoGenerationLogs(Base):
+    __tablename__ = "product_video_generation_logs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    brand_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class UgcLongformVideos(Base):
+    __tablename__ = "ugc_longform_videos"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    brand_id = Column(Integer, nullable=True)
+    status = Column(Text, nullable=True)
+    e2e = Column(Boolean, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class ProductVideoV2Logs(Base):
+    __tablename__ = "product_video_v2_logs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    brand_id = Column(Integer, nullable=True)
+    lambda_invoked = Column(Boolean, nullable=True)
+    status_code = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
 class IndustryVertical(Base):
@@ -271,6 +305,32 @@ class FeedbackUploadResponse(BaseModel):
     success: bool
     action: str
     message: str
+
+
+# -----------------------------
+# Analytics Models
+# -----------------------------
+class BrandAdTypeCounts(BaseModel):
+    brand_id: Optional[int]
+    brand_name: Optional[str]
+    counts: Dict[str, int]
+    total: int
+
+
+class AdRow(BaseModel):
+    brand_id: Optional[int]
+    brand_name: Optional[str]
+    ad_type: str
+    timestamp: Optional[str]
+
+
+class AdGenerationSummaryResponse(BaseModel):
+    ad_types: List[str]
+    totals: Dict[str, int]
+    brand_counts: List[BrandAdTypeCounts]
+    total_brands: int
+    total_ads: int
+    rows: Optional[List[AdRow]] = None
 
 
 # -----------------------------
@@ -873,6 +933,57 @@ def upsert_ads_evaluation(data: dict):
 
 
 # -----------------------------
+# Analytics Helpers
+# -----------------------------
+def get_brand_names_map(session, brand_ids: List[int]) -> Dict[int, str]:
+    """Return {brand_id: brand_name} for provided IDs."""
+    if not brand_ids:
+        return {}
+    rows = session.query(Brand.id, Brand.name).filter(Brand.id.in_(brand_ids)).all()
+    return {r.id: r.name for r in rows}
+
+
+def map_source_to_ad_type(source: str) -> Optional[str]:
+    """
+    Map internal source to high-level dashboard ad type.
+    - onboarding_ads, ad_central, creative_brief -> Image Ad
+    - avatar_ads -> Avatar Video
+    - Others → None (ignored)
+    """
+    if source in {"onboarding_ads", "ad_central", "creative_brief"}:
+        return "Image Ad"
+    if source == "avatar_ads":
+        return "Avatar Video"
+    return None
+
+
+def _counts_grouped_by_brand(
+    session, model, brand_col, created_at_col=None, extra_filters=None
+):
+    """
+    Return {brand_id: count} using COUNT(*) GROUP BY brand_id.
+    - extra_filters: list of SQLAlchemy filter expressions
+    - created_at_col used only if provided along with date filters in caller
+    """
+    q = session.query(brand_col, func.count().label("cnt"))
+    if extra_filters:
+        for f in extra_filters:
+            q = q.filter(f)
+    q = q.group_by(brand_col)
+    rows = q.all()
+    result: Dict[Optional[int], int] = {}
+    for bid, cnt in rows:
+        # Normalize brand id to int where possible
+        try:
+            norm = int(bid) if bid is not None else None
+        except Exception:
+            norm = None
+        if norm is not None:
+            result[norm] = int(cnt)
+    return result
+
+
+# -----------------------------
 # API Endpoints
 # -----------------------------
 
@@ -1122,6 +1233,344 @@ async def upload_feedback(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error uploading feedback: {str(e)}"
+        )
+
+
+# -----------------------------
+# Analytics Endpoint
+# -----------------------------
+@app.get(
+    "/api/analytics/ad_generation_summary", response_model=AdGenerationSummaryResponse
+)
+async def ad_generation_summary(
+    brand_id: Optional[Union[str, int]] = Query(
+        None, description="Brand ID (single ID or comma-separated list)"
+    ),
+    brands: Optional[bool] = Query(
+        None, description="If True, aggregate across all brands within date range"
+    ),
+    start_date: Optional[str] = Query(
+        None, description="Start date for ad creation filter (YYYY-MM-DD)"
+    ),
+    end_date: Optional[str] = Query(
+        None, description="End date for ad creation filter (YYYY-MM-DD)"
+    ),
+    source_filter: Optional[str] = Query(
+        "all",
+        description="Filter by source: 'onboarding_ads', 'ad_central', 'creative_brief', 'avatar_ads', 'clone_video', 'product_animation', 'commercial_24s', or 'all'",
+    ),
+    include_rows: Optional[bool] = Query(
+        False,
+        description="If True, include individual rows (brand, ad_type, timestamp)",
+    ),
+    rows_limit: Optional[int] = Query(
+        1000, ge=1, description="Max rows to include when include_rows=True"
+    ),
+):
+    """
+    Aggregate how many brands and which brands used which tools to generate what type of ads.
+    For now, spend/tools are ignored. Ad types returned:
+    - Image Ad (Onboarding + Ad Central + Creative Brief)
+    - Clone Video (placeholder)
+    - Avatar Video
+    - Avatar + Product (placeholder)
+    - Product Animation (placeholder)
+    - 24s Commercial (placeholder)
+    """
+    try:
+        session, tunnel = get_session()
+        try:
+            # Normalize brand scope and dates
+            # Parse date range if provided (applies to both brand_id and brands=true)
+            start_dt = (
+                datetime.strptime(start_date, "%Y-%m-%d").replace(hour=0, minute=0, second=0)
+                if start_date
+                else None
+            )
+            end_dt = (
+                datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+                if end_date
+                else None
+            )
+
+            if brand_id:
+                brand_ids = parse_brand_ids(brand_id)
+            elif brands:
+                brand_ids = []
+                # Default to last 30 days if no dates provided
+                if not start_dt and not end_dt:
+                    end_dt = datetime.now().replace(hour=23, minute=59, second=59)
+                    start_dt = (datetime.now() - timedelta(days=30)).replace(
+                        hour=0, minute=0, second=0
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Provide brand_id or set brands=true with an optional date range",
+                )
+
+            # Default to last 30 days if no dates provided (applies to both brand_id and brands=true)
+            if not start_dt and not end_dt:
+                end_dt = datetime.now().replace(hour=23, minute=59, second=59)
+                start_dt = (datetime.now() - timedelta(days=30)).replace(
+                    hour=0, minute=0, second=0
+                )
+
+            # Prepare constants
+            DASHBOARD_AD_TYPES = [
+                "Image Ad",
+                "Clone Video",
+                "Avatar Video",
+                "Avatar + Product",
+                "Product Animation",
+                "24s Commercial",
+            ]
+
+            # Initialize totals and per-brand counts
+            totals = {t: 0 for t in DASHBOARD_AD_TYPES}
+            brand_counts_index: Dict[int, Dict[str, int]] = {}
+
+            # Build filters per-table
+            def date_filters(col):
+                fs = []
+                if start_dt:
+                    fs.append(col >= start_dt)
+                if end_dt:
+                    fs.append(col <= end_dt)
+                return fs
+
+            # Source: Onboarding (GPTFirstTime) -> Image Ad
+            if source_filter in (None, "all", "onboarding_ads"):
+                if brand_ids:
+                    fs = [GPTFirstTime.brand_id.in_(brand_ids)]
+                    if start_dt or end_dt:
+                        fs += date_filters(GPTFirstTime.created_at)
+                else:
+                    fs = date_filters(GPTFirstTime.created_at)
+                image_from_onboarding = _counts_grouped_by_brand(
+                    session,
+                    GPTFirstTime,
+                    GPTFirstTime.brand_id,
+                    created_at_col=GPTFirstTime.created_at,
+                    extra_filters=fs,
+                )
+            else:
+                image_from_onboarding = {}
+
+            # Source: Ad Central -> Image Ad
+            if source_filter in (None, "all", "ad_central"):
+                if brand_ids:
+                    fs = [AdCentral.brand_id.in_(brand_ids)]
+                    if start_dt or end_dt:
+                        fs += date_filters(AdCentral.created_at)
+                else:
+                    fs = date_filters(AdCentral.created_at)
+                image_from_ad_central = _counts_grouped_by_brand(
+                    session,
+                    AdCentral,
+                    AdCentral.brand_id,
+                    created_at_col=AdCentral.created_at,
+                    extra_filters=fs,
+                )
+            else:
+                image_from_ad_central = {}
+
+            # Source: Creative Brief (GPTBlueprint) -> Image Ad
+            if source_filter in (None, "all", "creative_brief"):
+                if brand_ids:
+                    fs = [GPTBlueprint.brand_id.in_(brand_ids)]
+                    if start_dt or end_dt:
+                        fs += date_filters(GPTBlueprint.created_at)
+                else:
+                    fs = date_filters(GPTBlueprint.created_at)
+                image_from_brief = _counts_grouped_by_brand(
+                    session,
+                    GPTBlueprint,
+                    GPTBlueprint.brand_id,
+                    created_at_col=GPTBlueprint.created_at,
+                    extra_filters=fs,
+                )
+            else:
+                image_from_brief = {}
+
+            # Source: Avatar -> Avatar Video
+            if source_filter in (None, "all", "avatar_ads"):
+                if brand_ids:
+                    fs = [
+                        HeygenAvatarProductVideoGenerationLogs.brand_id.in_(
+                            [str(b) for b in brand_ids]
+                        ),
+                        HeygenAvatarProductVideoGenerationLogs.source_environment
+                        == "prod",
+                        HeygenAvatarProductVideoGenerationLogs.status == 200,
+                    ]
+                    if start_dt or end_dt:
+                        fs += date_filters(HeygenAvatarProductVideoGenerationLogs.created_at)
+                else:
+                    fs = date_filters(HeygenAvatarProductVideoGenerationLogs.created_at)
+                    fs.append(HeygenAvatarProductVideoGenerationLogs.source_environment == "prod")
+                    fs.append(HeygenAvatarProductVideoGenerationLogs.status == 200)
+                avatar_counts = _counts_grouped_by_brand(
+                    session,
+                    HeygenAvatarProductVideoGenerationLogs,
+                    HeygenAvatarProductVideoGenerationLogs.brand_id,
+                    created_at_col=HeygenAvatarProductVideoGenerationLogs.created_at,
+                    extra_filters=fs,
+                )
+            else:
+                avatar_counts = {}
+
+            # Source: Clone Ads -> Clone Video
+            if source_filter in (None, "all", "clone_video"):
+                if brand_ids:
+                    fs = [
+                        CloneAds.brand_id.in_(brand_ids),
+                        CloneAds.source_environment == "prod",
+                    ]
+                    if start_dt or end_dt:
+                        fs += date_filters(CloneAds.created_at)
+                else:
+                    fs = date_filters(CloneAds.created_at)
+                    fs.append(CloneAds.source_environment == "prod")
+                fs.append(CloneAds.final_video_url.isnot(None))
+                clone_counts = _counts_grouped_by_brand(
+                    session,
+                    CloneAds,
+                    CloneAds.brand_id,
+                    created_at_col=CloneAds.created_at,
+                    extra_filters=fs,
+                )
+            else:
+                clone_counts = {}
+
+            # Source: Product Video V2 -> Product Animation
+            if source_filter in (None, "all", "product_animation"):
+                if brand_ids:
+                    fs = [
+                        ProductVideoV2Logs.brand_id.in_(brand_ids),
+                        ProductVideoV2Logs.lambda_invoked.is_(True),
+                        ProductVideoV2Logs.status_code == 200,
+                    ]
+                    if start_dt or end_dt:
+                        fs += date_filters(ProductVideoV2Logs.created_at)
+                else:
+                    fs = date_filters(ProductVideoV2Logs.created_at)
+                    fs.append(ProductVideoV2Logs.lambda_invoked.is_(True))
+                    fs.append(ProductVideoV2Logs.status_code == 200)
+                product_anim_counts = _counts_grouped_by_brand(
+                    session,
+                    ProductVideoV2Logs,
+                    ProductVideoV2Logs.brand_id,
+                    created_at_col=ProductVideoV2Logs.created_at,
+                    extra_filters=fs,
+                )
+            else:
+                product_anim_counts = {}
+
+            # Source: UGC Longform -> 24s Commercial
+            if source_filter in (None, "all", "commercial_24s"):
+                if brand_ids:
+                    fs = [
+                        UgcLongformVideos.brand_id.in_(brand_ids),
+                        UgcLongformVideos.status == "completed",
+                        UgcLongformVideos.e2e.is_(True),
+                    ]
+                    if start_dt or end_dt:
+                        fs += date_filters(UgcLongformVideos.created_at)
+                else:
+                    fs = date_filters(UgcLongformVideos.created_at)
+                    fs.append(UgcLongformVideos.status == "completed")
+                    fs.append(UgcLongformVideos.e2e.is_(True))
+                commercial_24s_counts = _counts_grouped_by_brand(
+                    session,
+                    UgcLongformVideos,
+                    UgcLongformVideos.brand_id,
+                    created_at_col=UgcLongformVideos.created_at,
+                    extra_filters=fs,
+                )
+            else:
+                commercial_24s_counts = {}
+
+            # Combine into per-brand counts
+            all_brand_ids = (
+                set(image_from_onboarding.keys())
+                | set(image_from_ad_central.keys())
+                | set(image_from_brief.keys())
+                | set(avatar_counts.keys())
+                | set(clone_counts.keys())
+                | set(product_anim_counts.keys())
+                | set(commercial_24s_counts.keys())
+            )
+            for bid in all_brand_ids:
+                brand_counts_index.setdefault(bid, {t: 0 for t in DASHBOARD_AD_TYPES})
+                # Image Ad sum
+                img_total = (
+                    image_from_onboarding.get(bid, 0)
+                    + image_from_ad_central.get(bid, 0)
+                    + image_from_brief.get(bid, 0)
+                )
+                brand_counts_index[bid]["Image Ad"] = img_total
+                # Avatar Video
+                brand_counts_index[bid]["Avatar Video"] = avatar_counts.get(bid, 0)
+                # Avatar + Product mirrors Avatar Video
+                brand_counts_index[bid]["Avatar + Product"] = avatar_counts.get(bid, 0)
+                # Clone Video
+                brand_counts_index[bid]["Clone Video"] = clone_counts.get(bid, 0)
+                # Product Animation
+                brand_counts_index[bid]["Product Animation"] = product_anim_counts.get(
+                    bid, 0
+                )
+                # 24s Commercial
+                brand_counts_index[bid]["24s Commercial"] = commercial_24s_counts.get(
+                    bid, 0
+                )
+                # No remaining placeholders
+
+            # Totals
+            for bid, counts in brand_counts_index.items():
+                for k, v in counts.items():
+                    totals[k] += v
+
+            # Build brand names and response objects
+            active_brand_ids = sorted(
+                [bid for bid, c in brand_counts_index.items() if sum(c.values()) > 0]
+            )
+            brand_name_map = get_brand_names_map(session, active_brand_ids)
+            brand_counts: List[BrandAdTypeCounts] = [
+                BrandAdTypeCounts(
+                    brand_id=bid,
+                    brand_name=brand_name_map.get(bid),
+                    counts=brand_counts_index[bid],
+                    total=sum(brand_counts_index[bid].values()),
+                )
+                for bid in active_brand_ids
+            ]
+
+            total_brands = len(brand_counts)
+            total_ads = sum(totals.values())
+
+            # Optional rows (lightweight; we do not fetch heavy columns)
+            rows: List[AdRow] = []
+            if include_rows and rows_limit > 0:
+                # Build minimal per-ad rows only by reconstructing from counts is not possible;
+                # for a lightweight approach, skip rows unless specifically required with another query.
+                rows = []
+
+            return AdGenerationSummaryResponse(
+                ad_types=DASHBOARD_AD_TYPES,
+                totals=totals,
+                brand_counts=brand_counts,
+                total_brands=total_brands,
+                total_ads=total_ads,
+                rows=rows if include_rows else None,
+            )
+        finally:
+            close_connections(session, tunnel)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error generating ad summary: {str(e)}"
         )
 
 
