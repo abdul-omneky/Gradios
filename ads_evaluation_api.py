@@ -91,6 +91,22 @@ class AdsEvaluation(Base):
     )
 
 
+class HeygenAvatarProductVideoGenerationLogs(Base):
+    __tablename__ = "heygen_avatar_v4_video_generation"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(Text, nullable=True)
+    heygen_video_id = Column(Text, nullable=True)
+    brand_id = Column(Text, nullable=True)
+    payload = Column(JSONB, nullable=True)
+    s3_uri = Column(Text, nullable=True)
+    status = Column(Integer, nullable=True)
+    error_message = Column(Text, nullable=True)
+    lambda_invoked = Column(Boolean, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    e2e = Column(Boolean, nullable=True)
+    source_environment = Column(Text, nullable=True)
+
+
 class IndustryVertical(Base):
     __tablename__ = "industry_vertical"
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -267,6 +283,15 @@ def strip_query_params(url: str) -> str:
     return urlunparse(cleaned)
 
 
+def s3_uri_to_url(s3_uri: str) -> str:
+    """Convert S3 URI to URL"""
+    parsed = urlparse(s3_uri)
+    bucket = parsed.netloc
+    key = parsed.path.lstrip("/")
+
+    return f"https://{bucket}.s3.amazonaws.com/{key}"
+
+
 def generate_presigned_url(presigned_url: str) -> str:
     """Generate presigned URL for S3 objects"""
     s3_client = boto3.client("s3", region_name="us-east-1")
@@ -398,7 +423,7 @@ def get_combined_ads(
     start_date: str = None,
     end_date: str = None,
 ):
-    """Fetch ads concurrently from GPTFirstTime, AdCentral, and GPTBlueprint tables with optional source filtering and date filtering."""
+    """Fetch ads concurrently from GPTFirstTime, AdCentral, GPTBlueprint, and HeygenAvatarProductVideoGenerationLogs tables with optional source filtering and date filtering."""
     all_ads = []
 
     # Normalize brand_id list
@@ -603,7 +628,7 @@ def get_combined_ads(
             ads.append(
                 {
                     "reference_ad": r.ref,
-                    "generated_ad": generate_presigned_url(r.gen),
+                    "generated_ad": r.gen,  # generate_presigned_url(r.gen),
                     "prompt": r.prompt or "",
                     "asset": r.asset,
                     "id": extract_id_from_url(r.s3_uri),
@@ -614,21 +639,114 @@ def get_combined_ads(
             )
         return ads
 
+    def fetch_avatar_ads():
+        session, _ = get_session()
+        query = session.query(
+            HeygenAvatarProductVideoGenerationLogs.s3_uri,
+            HeygenAvatarProductVideoGenerationLogs.brand_id,
+            HeygenAvatarProductVideoGenerationLogs.payload,
+            HeygenAvatarProductVideoGenerationLogs.created_at,
+        )
+
+        # For "All Ads" mode, filter by ad creation date instead of brand_ids
+        if start_date or end_date:
+            if start_date:
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(
+                    hour=0, minute=0, second=0
+                )
+            else:
+                start_dt = datetime.now() - timedelta(days=5)
+
+            if end_date:
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59
+                )
+            else:
+                end_dt = datetime.now().replace(hour=23, minute=59, second=59)
+
+            query = query.filter(
+                HeygenAvatarProductVideoGenerationLogs.created_at.between(
+                    start_dt, end_dt
+                ),
+                HeygenAvatarProductVideoGenerationLogs.source_environment == "prod",
+            )
+        else:
+            # For other modes, filter by brand_ids
+            query = query.filter(
+                HeygenAvatarProductVideoGenerationLogs.brand_id.in_(
+                    [str(bid) for bid in brand_ids]
+                ),
+                HeygenAvatarProductVideoGenerationLogs.source_environment == "prod",
+            )
+
+        results = query.order_by(
+            desc(HeygenAvatarProductVideoGenerationLogs.created_at)
+        ).all()
+        session.close()
+        ads = []
+
+        for row in results:
+            if row and row[0]:  # Check if s3_uri exists
+                try:
+                    # Get asset and prompt from payload if available
+                    asset = ""
+                    prompt = ""
+                    if row[2] and isinstance(row[2], dict):
+                        # Extract asset from payload
+                        asset = row[2].get("asset_url", "")
+                        # Extract prompt from payload
+                        prompt = row[2].get("prompt", "") or row[2].get(
+                            "ad_generation_prompt", ""
+                        )
+
+                    # Generate presigned URL for the video
+                    generated_ad_url = s3_uri_to_url(row[0]) if row[0] else ""
+
+                    ads.append(
+                        {
+                            "reference_ad": None,  # Avatar ads typically don't have reference ads
+                            "generated_ad": generated_ad_url,
+                            "prompt": prompt,
+                            "asset": asset,
+                            "id": extract_id_from_url(row[0]),
+                            "brand_id": int(row[1])
+                            if row[1] and str(row[1]).isdigit()
+                            else None,
+                            "timestamp": row[3].isoformat() if row[3] else None,
+                            "generated_by": "avatar_ads",
+                        }
+                    )
+                except Exception:
+                    continue
+        return ads
+
     # Determine which functions to run based on source_filter
     functions_to_run = []
 
     if not source_filter or source_filter == "all":
-        # Run all sources
-        functions_to_run = [fetch_first_time, fetch_ad_central, fetch_blueprint]
+        # Run all sources including avatar ads
+        functions_to_run = [
+            fetch_first_time,
+            fetch_ad_central,
+            fetch_blueprint,
+            fetch_avatar_ads,
+        ]
     elif source_filter == "onboarding_ads":
         functions_to_run = [fetch_first_time]
     elif source_filter == "ad_central":
         functions_to_run = [fetch_ad_central]
     elif source_filter == "creative_brief":
         functions_to_run = [fetch_blueprint]
+    elif source_filter == "avatar_ads":
+        functions_to_run = [fetch_avatar_ads]
     else:
         # Invalid source_filter, default to all
-        functions_to_run = [fetch_first_time, fetch_ad_central, fetch_blueprint]
+        functions_to_run = [
+            fetch_first_time,
+            fetch_ad_central,
+            fetch_blueprint,
+            fetch_avatar_ads,
+        ]
 
     # Run selected functions concurrently
     with ThreadPoolExecutor(max_workers=len(functions_to_run)) as executor:
@@ -799,7 +917,7 @@ async def fetch_combined_ads(
     limit: Optional[int] = Query(10, description="Number of brands to fetch"),
     source_filter: Optional[str] = Query(
         None,
-        description="Filter by ad source: 'onboarding_ads', 'ad_central', 'creative_brief', or 'all'",
+        description="Filter by ad source: 'onboarding_ads', 'ad_central', 'creative_brief', 'avatar_ads', or 'all'",
     ),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
     page_size: int = Query(10, ge=1, description="Number of items per page"),
@@ -815,7 +933,7 @@ async def fetch_combined_ads(
         end_date: End date for brand creation filter in YYYY-MM-DD format (optional)
         brands: If True, fetch all active brands within date range, otherwise default to 10 days (optional)
         limit: Number of brands to fetch when using industry/country filters (default 10)
-        source_filter: Filter by ad source - 'onboarding_ads', 'ad_central', 'creative_brief', or 'all' (optional)
+        source_filter: Filter by ad source - 'onboarding_ads', 'ad_central', 'creative_brief', 'avatar_ads', or 'all' (optional)
         page: Page number (starts from 1)
         page_size: Number of items per page (default 10)
 
