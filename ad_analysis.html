@@ -43,6 +43,8 @@
     }
     .sep{width:1px; height:20px; background:var(--panelBorder); margin:0 4px}
     .label{font-size:12px; letter-spacing:.1em; color:var(--txtDim); margin-right:4px}
+    .brand-field{display:flex; flex-direction:column; gap:3px; min-width:240px}
+    .brand-field .hint{font-size:10px; opacity:.85}
     .btn{
       cursor:pointer; border:1px solid var(--muted2); background:#12233a; color:#dbe8f5; padding:9px 16px; border-radius:8px;
       font-family:inherit; font-size:13px; letter-spacing:.04em; transition:all .2s ease;
@@ -54,6 +56,15 @@
     }
     .sel:focus, .date:focus, .text:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(56,189,248,.14)}
     .grid-kpi{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:24px}
+    .trend-cards{display:grid; gap:14px; margin-bottom:24px}
+    .trend-cards.one{grid-template-columns:1fr}
+    .trend-cards.two{grid-template-columns:repeat(2,1fr)}
+    .trend-cards.three{grid-template-columns:repeat(3,1fr)}
+    .trend-card .cap{font-size:12px; letter-spacing:.12em; color:var(--txtDim); margin-bottom:10px}
+    .trend-card-chart{width:100%; min-height:200px; overflow-x:auto}
+    .trend-card-legend{display:flex; flex-wrap:wrap; gap:10px; margin-top:10px}
+    .trend-card-legend-item{display:flex; align-items:center; gap:6px; font-size:11px; color:var(--txtDim)}
+    .trend-card-legend-dot{width:8px; height:8px; border-radius:50%}
     .kpi{
       background:linear-gradient(135deg,#142136,#0d1829);
       border:1px solid rgba(56,189,248,.16); border-radius:12px; padding:18px 20px; position:relative; overflow:hidden;
@@ -64,6 +75,10 @@
     .kpi .name{font-size:12px; letter-spacing:.12em; color:var(--txtDim); margin-bottom:8px; text-transform:uppercase}
     .kpi .val{font-size:40px; font-weight:600; color:var(--accent); line-height:1; margin-bottom:6px}
     .kpi .sub{display:flex; justify-content:space-between; align-items:flex-end; font-size:13px; color:var(--txtDim)}
+    .trend-legend{display:flex; flex-wrap:wrap; gap:10px; margin-top:8px}
+    .trend-legend-item{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--txtDim)}
+    .trend-legend-dot{width:8px; height:8px; border-radius:50%}
+    .trend-empty{font-size:12px; color:var(--txtDim); text-align:center; padding:30px 0}
     .mid{display:grid; grid-template-columns:220px 1fr 1fr; gap:14px; margin-bottom:24px}
     .panel{
       background:linear-gradient(180deg, rgba(17,28,44,.95), rgba(14,22,35,.95));
@@ -157,7 +172,7 @@
 
     <div class="controls">
       <span class="label">RANGE</span>
-      <button class="btn active" data-range="7">7d</button>
+      <button class="btn" data-range="7">7d</button>
       <button class="btn" data-range="15">15d</button>
       <button class="btn" data-range="30">30d</button>
       <button class="btn" data-range="60">60d</button>
@@ -168,7 +183,10 @@
       <input id="endDate" class="date" type="date" />
       <div class="sep"></div>
       <span class="label">BRAND IDs</span>
-      <input id="brandIds" class="text" placeholder="e.g. 12,34 (leave empty for all)" style="min-width:240px" />
+      <div class="brand-field">
+        <input id="brandIds" class="text" placeholder="e.g. 12,34 (leave empty for all)" value="196" />
+        <span class="muted hint">Clear this field to view all brands</span>
+      </div>
       <div class="sep"></div>
       <span class="label">SOURCE</span>
       <select id="sourceFilter" class="sel">
@@ -176,7 +194,7 @@
         <option value="onboarding_ads">Onboarding</option>
         <option value="ad_central">Ad Central</option>
         <option value="creative_brief">Creative Brief</option>
-        <option value="avatar_ads">Avatar Video</option>
+        <option value="avatar_ads">Avatar Videos</option>
         <option value="clone_video">Clone Video</option>
         <option value="product_animation">Product Animation</option>
         <option value="commercial_24s">24s Commercial</option>
@@ -200,6 +218,24 @@
       </div>
     </div>
 
+    <div id="trendCardsRow" class="trend-cards one" style="display:none">
+      <div id="trendCardDaily" class="panel trend-card" style="display:none">
+        <div class="cap">DAILY — ADS GENERATED</div>
+        <div id="trendChartDaily" class="trend-card-chart"></div>
+        <div id="trendLegendDaily" class="trend-card-legend"></div>
+      </div>
+      <div id="trendCardWeekly" class="panel trend-card" style="display:none">
+        <div class="cap">WEEKLY — ADS GENERATED</div>
+        <div id="trendChartWeekly" class="trend-card-chart"></div>
+        <div id="trendLegendWeekly" class="trend-card-legend"></div>
+      </div>
+      <div id="trendCardMonthly" class="panel trend-card" style="display:none">
+        <div class="cap">MONTHLY — ADS GENERATED</div>
+        <div id="trendChartMonthly" class="trend-card-chart"></div>
+        <div id="trendLegendMonthly" class="trend-card-legend"></div>
+      </div>
+    </div>
+
     <div class="mid">
       <div class="panel">
         <div class="cap">AD TYPE MIX</div>
@@ -218,7 +254,7 @@
           <button class="btn sort" data-sort="total">TOTAL</button>
           <button class="btn sort" data-sort="Image Ad">IMAGE</button>
           <button class="btn sort" data-sort="Clone Video">CLONE</button>
-          <button class="btn sort" data-sort="Avatar">AVATAR</button>
+          <button class="btn sort" data-sort="Avatar Videos">AVATAR</button>
           <button class="btn sort" data-sort="Product Animation">PRODUCT ANIM</button>
           <button class="btn sort" data-sort="24s Commercial">24S</button>
           </div>
@@ -258,19 +294,21 @@
       "Clone Video":       "#a78bfa",
       "Avatar":            "#fb923c",
       "Avatar Video":      "#fb923c",
-      "Avatar + Product":  "#34d399",
+      "Avatar Videos":     "#fb923c",
+      "Avatar + Product":  "#fb923c",
       "Product Animation": "#f472b6",
       "24s Commercial":    "#facc15",
     };
 
     // ---- State ----
     const state = {
-      rangeDays: 7,
+      rangeDays: 15,
       customStart: "",
       customEnd: "",
       source: "all",
-      brandIds: "",
+      brandIds: "196",
       data: null,
+      summaryTrendData: null,
       sortBy: "total",
       brandQuery: "",
     };
@@ -290,6 +328,70 @@
     function setActiveRangeBtn(days){
       document.querySelectorAll('.btn[data-range]').forEach(b=>b.classList.toggle('active', String(days)===b.dataset.range));
     }
+    function normalizeAdType(adType){
+      if(adType === 'Avatar' || adType === 'Avatar Video' || adType === 'Avatar + Product' || adType === 'Avatar Videos'){
+        return 'Avatar Videos';
+      }
+      return adType;
+    }
+    function normalizeSummaryTrendForCards(points, adTypes){
+      if(!points || !adTypes) return { points: points || [], adTypes: adTypes || [] };
+      const seen = new Set();
+      const order = [];
+      adTypes.forEach(t=>{
+        const n = normalizeAdType(t);
+        if(seen.has(n)) return;
+        seen.add(n);
+        order.push(n);
+      });
+      const normalizedPoints = points.map(p=>{
+        const counts = {};
+        order.forEach(n=>{
+          if(n === 'Avatar Videos'){
+            counts[n] = (p.counts['Avatar'] || 0) + (p.counts['Avatar Video'] || 0) + (p.counts['Avatar + Product'] || 0) + (p.counts['Avatar Videos'] || 0);
+          } else {
+            counts[n] = p.counts[n] || 0;
+          }
+        });
+        return { date: p.date, counts, total: Object.values(counts).reduce((a,b)=>a+b,0) };
+      });
+      return { points: normalizedPoints, adTypes: order };
+    }
+    function getNormalizedAdTypeTotals(){
+      if(!state.data){ return { adTypes: [], totals: {} }; }
+      const sourceAdTypes = state.data.ad_types || [];
+      const sourceTotals = state.data.totals || {};
+      const totals = {};
+      sourceAdTypes.forEach(t=>{
+        const normalized = normalizeAdType(t);
+        totals[normalized] = (totals[normalized] || 0) + (sourceTotals[t] || 0);
+      });
+      return { adTypes: Object.keys(totals), totals };
+    }
+    function getDateRange(){
+      let start = state.customStart;
+      let end = state.customEnd;
+      if(!start || !end){
+        const endD = today();
+        const startD = addDays(endD, -state.rangeDays+1);
+        start = ymd(startD);
+        end = ymd(endD);
+      }
+      return { start, end };
+    }
+    function getEffectiveRangeDays(){
+      const { start, end } = getDateRange();
+      const startD = new Date(`${start}T00:00:00`);
+      const endD = new Date(`${end}T00:00:00`);
+      if(Number.isNaN(startD.getTime()) || Number.isNaN(endD.getTime())) return state.rangeDays;
+      const days = Math.round((endD - startD) / (24*60*60*1000)) + 1;
+      return Math.max(1, days);
+    }
+    function isSingleBrandSelected(){
+      if(!state.brandIds || !state.brandIds.trim()) return false;
+      const ids = state.brandIds.split(',').map(s=>s.trim()).filter(Boolean);
+      return ids.length === 1;
+    }
 
     // ---- Fetch ----
     async function fetchSummary(){
@@ -297,13 +399,7 @@
       errEl.style.display='none'; errEl.textContent='';
 
       // dates
-      let start = state.customStart;
-      let end = state.customEnd;
-      if(!start || !end){
-        const endD = today();
-        const startD = addDays(endD, -state.rangeDays+1);
-        start = ymd(startD); end = ymd(endD);
-      }
+      const { start, end } = getDateRange();
 
       // query
       const params = new URLSearchParams();
@@ -325,6 +421,24 @@
         if(!r.ok) throw new Error(`HTTP ${r.status}`);
         const json = await r.json();
         state.data = json;
+        try{
+          const sumParams = new URLSearchParams();
+          sumParams.set('start_date', start);
+          sumParams.set('end_date', end);
+          sumParams.set('source_filter', state.source || 'all');
+          if(state.brandIds && state.brandIds.trim()){
+            sumParams.set('brand_id', state.brandIds.trim());
+          }else{
+            sumParams.set('brands', 'true');
+          }
+          const sumUrl = `${API_BASE}/api/analytics/ad_generation_trend_summary?${sumParams.toString()}`;
+          const sumRes = await fetch(sumUrl, { headers: { accept: 'application/json' }});
+          if(sumRes.ok) state.summaryTrendData = await sumRes.json();
+          else state.summaryTrendData = null;
+        }catch(err){
+          console.warn('Summary trend fetch failed:', err);
+          state.summaryTrendData = null;
+        }
         renderAll();
         document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toString().slice(0,24)} · ${fmt(json.total_ads)} ads`;
         document.getElementById('footer').textContent = `AD GENERATION ANALYTICS · DATA RANGE: ${start} → ${end}`;
@@ -342,14 +456,147 @@
       document.getElementById('kpiTotalAds').textContent = fmt(state.data.total_ads);
       document.getElementById('kpiBrands').textContent = fmt(state.data.total_brands);
     }
+    function drawStackedTrendChart(mount, legendMount, points, adTypes){
+      mount.innerHTML = '';
+      if(legendMount) legendMount.innerHTML = '';
+      if(!points || !points.length){ mount.innerHTML = '<div class="trend-empty">No data</div>'; return; }
+      const order = (adTypes || []).filter(t=> t && t.length);
+      if(!order.length){ mount.innerHTML = '<div class="trend-empty">No ad types</div>'; return; }
+      const maxY = Math.max(1, ...points.map(p=> p.total || 0));
+      const width = Math.max(420, Math.min(640, points.length * 28));
+      const height = 200;
+      const pad = { top: 14, right: 14, bottom: 26, left: 38 };
+      const innerW = width - pad.left - pad.right;
+      const innerH = height - pad.top - pad.bottom;
+      const xStep = points.length > 1 ? innerW / (points.length - 1) : 0;
+      const y = (v) => pad.top + innerH - (v / maxY) * innerH;
+
+      const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+      svg.setAttribute('width','100%');
+      svg.setAttribute('height', String(height));
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+      for(let i = 0; i <= 4; i++){
+        const ly = pad.top + (innerH * i / 4);
+        const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+        line.setAttribute('x1', String(pad.left));
+        line.setAttribute('x2', String(width - pad.right));
+        line.setAttribute('y1', String(ly));
+        line.setAttribute('y2', String(ly));
+        line.setAttribute('stroke', '#233347');
+        line.setAttribute('stroke-width', '1');
+        svg.appendChild(line);
+
+        const yVal = Math.round(maxY - (maxY * i / 4));
+        const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+        lbl.setAttribute('x', String(pad.left - 6));
+        lbl.setAttribute('y', String(ly + 4));
+        lbl.setAttribute('text-anchor', 'end');
+        lbl.setAttribute('fill', '#9fb0c7');
+        lbl.setAttribute('font-size', '10');
+        lbl.setAttribute('font-family', "'DM Mono', monospace");
+        lbl.textContent = String(yVal);
+        svg.appendChild(lbl);
+      }
+
+      const cum = points.map(p=>{
+        let s = 0;
+        const c = [0];
+        order.forEach(t=>{ s += p.counts[t] || 0; c.push(s); });
+        return c;
+      });
+
+      order.forEach((t, j)=>{
+        const poly = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+        let pts = '';
+        for(let i = 0; i < points.length; i++){
+          pts += `${pad.left + xStep * i},${y(cum[i][j])} `;
+        }
+        for(let i = points.length - 1; i >= 0; i--){
+          pts += `${pad.left + xStep * i},${y(cum[i][j + 1])} `;
+        }
+        poly.setAttribute('points', pts.trim());
+        poly.setAttribute('fill', AD_COLORS[t] || '#64748b');
+        poly.setAttribute('opacity', '0.85');
+        poly.setAttribute('stroke', AD_COLORS[t] || '#64748b');
+        poly.setAttribute('stroke-width', '1');
+        svg.appendChild(poly);
+      });
+
+      const tickStep = Math.max(1, Math.ceil(points.length / 6));
+      for(let idx = 0; idx < points.length; idx += tickStep){
+        const x = pad.left + (xStep * idx);
+        const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+        txt.setAttribute('x', String(x));
+        txt.setAttribute('y', String(height - 6));
+        txt.setAttribute('text-anchor', idx === 0 ? 'start' : (idx >= points.length - 1 ? 'end' : 'middle'));
+        txt.setAttribute('fill', '#9fb0c7');
+        txt.setAttribute('font-size', '10');
+        txt.setAttribute('font-family', "'DM Mono', monospace");
+        txt.textContent = points[idx].date.slice(5) || points[idx].date;
+        svg.appendChild(txt);
+      }
+      mount.appendChild(svg);
+
+      if(legendMount){
+        order.forEach(t=>{
+          const item = document.createElement('div');
+          item.className = 'trend-card-legend-item';
+          const dot = document.createElement('div');
+          dot.className = 'trend-card-legend-dot';
+          dot.style.background = AD_COLORS[t] || '#64748b';
+          const label = document.createElement('span');
+          label.textContent = t;
+          item.appendChild(dot);
+          item.appendChild(label);
+          legendMount.appendChild(item);
+        });
+      }
+    }
+
+    function renderSummaryTrendCards(){
+      const row = document.getElementById('trendCardsRow');
+      const cardDaily = document.getElementById('trendCardDaily');
+      const cardWeekly = document.getElementById('trendCardWeekly');
+      const cardMonthly = document.getElementById('trendCardMonthly');
+      const chartDaily = document.getElementById('trendChartDaily');
+      const chartWeekly = document.getElementById('trendChartWeekly');
+      const chartMonthly = document.getElementById('trendChartMonthly');
+      const legendDaily = document.getElementById('trendLegendDaily');
+      const legendWeekly = document.getElementById('trendLegendWeekly');
+      const legendMonthly = document.getElementById('trendLegendMonthly');
+
+      if(!state.summaryTrendData){
+        row.style.display = 'none';
+        return;
+      }
+
+      const days = getEffectiveRangeDays();
+      let showDaily = true, showWeekly = false, showMonthly = false;
+      if(days > 30){ showWeekly = true; showMonthly = true; }
+      else if(days > 7){ showWeekly = true; }
+
+      row.style.display = 'grid';
+      row.className = 'trend-cards ' + (showDaily && showWeekly && showMonthly ? 'three' : (showWeekly ? 'two' : 'one'));
+      cardDaily.style.display = showDaily ? '' : 'none';
+      cardWeekly.style.display = showWeekly ? '' : 'none';
+      cardMonthly.style.display = showMonthly ? '' : 'none';
+
+      const adTypes = state.summaryTrendData.ad_types || [];
+      const dailyNorm = normalizeSummaryTrendForCards(state.summaryTrendData.daily || [], adTypes);
+      const weeklyNorm = normalizeSummaryTrendForCards(state.summaryTrendData.weekly || [], adTypes);
+      const monthlyNorm = normalizeSummaryTrendForCards(state.summaryTrendData.monthly || [], adTypes);
+      if(showDaily) drawStackedTrendChart(chartDaily, legendDaily, dailyNorm.points, dailyNorm.adTypes);
+      if(showWeekly) drawStackedTrendChart(chartWeekly, legendWeekly, weeklyNorm.points, weeklyNorm.adTypes);
+      if(showMonthly) drawStackedTrendChart(chartMonthly, legendMonthly, monthlyNorm.points, monthlyNorm.adTypes);
+    }
 
     function renderDonut(){
       const mount = document.getElementById('donut');
       const legend = document.getElementById('legend');
       mount.innerHTML = ''; legend.innerHTML='';
       if(!state.data){ return; }
-      const adTypes = state.data.ad_types || [];
-      const totals = state.data.totals || {};
+      const { adTypes, totals } = getNormalizedAdTypeTotals();
       const data = adTypes.map(t=>({label:t, value: totals[t]||0}));
       const total = data.reduce((s,d)=>s+d.value,0);
       const size=160, r=56, cx=80, cy=80, stroke=20;
@@ -406,8 +653,7 @@
       const mount = document.getElementById('adTypeBars');
       mount.innerHTML='';
       if(!state.data){ return; }
-      const adTypes = state.data.ad_types || [];
-      const totals = state.data.totals || {};
+      const { adTypes, totals } = getNormalizedAdTypeTotals();
       const items = adTypes.map(t=>({label:t, value: totals[t]||0})).sort((a,b)=>b.value-a.value);
       const max = Math.max(1, ...items.map(i=>i.value));
       items.forEach(d=>{
@@ -441,23 +687,19 @@
     function getTableAdTypes(){
       const src = (state.data && state.data.ad_types) || [];
       const merged = [];
-      let avatarAdded = false;
+      const seen = new Set();
       src.forEach(t=>{
-        if(t === 'Avatar Video' || t === 'Avatar + Product'){
-          if(!avatarAdded){
-            merged.push('Avatar');
-            avatarAdded = true;
-          }
-          return;
-        }
-        merged.push(t);
+        const normalized = normalizeAdType(t);
+        if(seen.has(normalized)) return;
+        seen.add(normalized);
+        merged.push(normalized);
       });
       return merged;
     }
 
     function getTableCount(counts, adType){
-      if(adType === 'Avatar'){
-        return (counts?.['Avatar Video'] || 0) + (counts?.['Avatar + Product'] || 0);
+      if(adType === 'Avatar Videos'){
+        return (counts?.['Avatar'] || 0) + (counts?.['Avatar Video'] || 0) + (counts?.['Avatar + Product'] || 0) + (counts?.['Avatar Videos'] || 0);
       }
       return counts?.[adType] || 0;
     }
@@ -522,6 +764,7 @@
 
     function renderAll(){
       renderKPIs();
+      renderSummaryTrendCards();
       renderDonut();
       renderAdTypeBars();
       buildTableHead();
@@ -565,6 +808,9 @@
     (function init(){
       // default sort active
       document.querySelector('.sort[data-sort="total"]').classList.add('active');
+      // default controls
+      document.getElementById('brandIds').value = state.brandIds;
+      setActiveRangeBtn(state.rangeDays);
       // default end-date max today
       const endEl = document.getElementById('endDate');
       const startEl = document.getElementById('startDate');
