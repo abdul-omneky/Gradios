@@ -333,6 +333,27 @@ class AdGenerationSummaryResponse(BaseModel):
     rows: Optional[List[AdRow]] = None
 
 
+class AdTrendPoint(BaseModel):
+    date: str
+    counts: Dict[str, int]
+    total: int
+
+
+class AdGenerationTrendResponse(BaseModel):
+    brand_id: int
+    brand_name: Optional[str]
+    ad_types: List[str]
+    points: List[AdTrendPoint]
+
+
+class AdGenerationTrendSummaryResponse(BaseModel):
+    """Daily, weekly, and monthly aggregated counts per ad type (all brands or single brand)."""
+    daily: List[AdTrendPoint]
+    weekly: List[AdTrendPoint]
+    monthly: List[AdTrendPoint]
+    ad_types: List[str]
+
+
 # -----------------------------
 # Utility Functions (copied from original file)
 # -----------------------------
@@ -1512,8 +1533,9 @@ async def ad_generation_summary(
                 brand_counts_index[bid]["Image Ad"] = img_total
                 # Avatar Video
                 brand_counts_index[bid]["Avatar Video"] = avatar_counts.get(bid, 0)
-                # Avatar + Product mirrors Avatar Video
-                brand_counts_index[bid]["Avatar + Product"] = avatar_counts.get(bid, 0)
+                # Avatar + Product should not mirror Avatar Video.
+                # Keep this at 0 until a dedicated Avatar+Product source is wired in.
+                brand_counts_index[bid]["Avatar + Product"] = 0
                 # Clone Video
                 brand_counts_index[bid]["Clone Video"] = clone_counts.get(bid, 0)
                 # Product Animation
@@ -1571,6 +1593,517 @@ async def ad_generation_summary(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error generating ad summary: {str(e)}"
+        )
+
+
+@app.get(
+    "/api/analytics/ad_generation_trend", response_model=AdGenerationTrendResponse
+)
+async def ad_generation_trend(
+    brand_id: Union[str, int] = Query(
+        ..., description="Single brand ID for trend chart"
+    ),
+    start_date: Optional[str] = Query(
+        None, description="Start date for ad creation filter (YYYY-MM-DD)"
+    ),
+    end_date: Optional[str] = Query(
+        None, description="End date for ad creation filter (YYYY-MM-DD)"
+    ),
+    source_filter: Optional[str] = Query(
+        "all",
+        description="Filter by source: 'onboarding_ads', 'ad_central', 'creative_brief', 'avatar_ads', 'clone_video', 'product_animation', 'commercial_24s', or 'all'",
+    ),
+):
+    """Daily ad generation trend for a specific brand."""
+    try:
+        session, tunnel = get_session()
+        try:
+            brand_ids = parse_brand_ids(brand_id)
+            if len(brand_ids) != 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Provide a single brand_id for trend data",
+                )
+            selected_brand_id = brand_ids[0]
+
+            start_dt = (
+                datetime.strptime(start_date, "%Y-%m-%d").replace(
+                    hour=0, minute=0, second=0
+                )
+                if start_date
+                else None
+            )
+            end_dt = (
+                datetime.strptime(end_date, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59
+                )
+                if end_date
+                else None
+            )
+
+            if not start_dt and not end_dt:
+                end_dt = datetime.now().replace(hour=23, minute=59, second=59)
+                start_dt = (datetime.now() - timedelta(days=30)).replace(
+                    hour=0, minute=0, second=0
+                )
+
+            DASHBOARD_AD_TYPES = [
+                "Image Ad",
+                "Clone Video",
+                "Avatar Video",
+                "Avatar + Product",
+                "Product Animation",
+                "24s Commercial",
+            ]
+
+            def date_filters(col):
+                fs = []
+                if start_dt:
+                    fs.append(col >= start_dt)
+                if end_dt:
+                    fs.append(col <= end_dt)
+                return fs
+
+            points_index: Dict[str, Dict[str, int]] = {}
+            cursor_date = start_dt.date()
+            end_date_only = end_dt.date()
+            while cursor_date <= end_date_only:
+                points_index[cursor_date.isoformat()] = {
+                    t: 0 for t in DASHBOARD_AD_TYPES
+                }
+                cursor_date += timedelta(days=1)
+
+            def merge_daily_counts(rows, ad_type):
+                for day, cnt in rows:
+                    day_key = day.isoformat()
+                    if day_key not in points_index:
+                        continue
+                    points_index[day_key][ad_type] += int(cnt or 0)
+
+            if source_filter in (None, "all", "onboarding_ads"):
+                rows = (
+                    session.query(
+                        func.date(GPTFirstTime.created_at).label("d"),
+                        func.count().label("cnt"),
+                    )
+                    .filter(
+                        GPTFirstTime.brand_id == selected_brand_id,
+                        *date_filters(GPTFirstTime.created_at),
+                    )
+                    .group_by(func.date(GPTFirstTime.created_at))
+                    .all()
+                )
+                merge_daily_counts(rows, "Image Ad")
+
+            if source_filter in (None, "all", "ad_central"):
+                rows = (
+                    session.query(
+                        func.date(AdCentral.created_at).label("d"),
+                        func.count().label("cnt"),
+                    )
+                    .filter(
+                        AdCentral.brand_id == selected_brand_id,
+                        *date_filters(AdCentral.created_at),
+                    )
+                    .group_by(func.date(AdCentral.created_at))
+                    .all()
+                )
+                merge_daily_counts(rows, "Image Ad")
+
+            if source_filter in (None, "all", "creative_brief"):
+                rows = (
+                    session.query(
+                        func.date(GPTBlueprint.created_at).label("d"),
+                        func.count().label("cnt"),
+                    )
+                    .filter(
+                        GPTBlueprint.brand_id == selected_brand_id,
+                        *date_filters(GPTBlueprint.created_at),
+                    )
+                    .group_by(func.date(GPTBlueprint.created_at))
+                    .all()
+                )
+                merge_daily_counts(rows, "Image Ad")
+
+            if source_filter in (None, "all", "avatar_ads"):
+                rows = (
+                    session.query(
+                        func.date(HeygenAvatarProductVideoGenerationLogs.created_at).label(
+                            "d"
+                        ),
+                        func.count().label("cnt"),
+                    )
+                    .filter(
+                        HeygenAvatarProductVideoGenerationLogs.brand_id
+                        == str(selected_brand_id),
+                        HeygenAvatarProductVideoGenerationLogs.source_environment
+                        == "prod",
+                        HeygenAvatarProductVideoGenerationLogs.status == 200,
+                        *date_filters(HeygenAvatarProductVideoGenerationLogs.created_at),
+                    )
+                    .group_by(func.date(HeygenAvatarProductVideoGenerationLogs.created_at))
+                    .all()
+                )
+                merge_daily_counts(rows, "Avatar Video")
+
+            if source_filter in (None, "all", "clone_video"):
+                rows = (
+                    session.query(
+                        func.date(CloneAds.created_at).label("d"),
+                        func.count().label("cnt"),
+                    )
+                    .filter(
+                        CloneAds.brand_id == selected_brand_id,
+                        CloneAds.source_environment == "prod",
+                        CloneAds.final_video_url.isnot(None),
+                        *date_filters(CloneAds.created_at),
+                    )
+                    .group_by(func.date(CloneAds.created_at))
+                    .all()
+                )
+                merge_daily_counts(rows, "Clone Video")
+
+            if source_filter in (None, "all", "product_animation"):
+                rows = (
+                    session.query(
+                        func.date(ProductVideoV2Logs.created_at).label("d"),
+                        func.count().label("cnt"),
+                    )
+                    .filter(
+                        ProductVideoV2Logs.brand_id == selected_brand_id,
+                        ProductVideoV2Logs.lambda_invoked.is_(True),
+                        ProductVideoV2Logs.status_code == 200,
+                        *date_filters(ProductVideoV2Logs.created_at),
+                    )
+                    .group_by(func.date(ProductVideoV2Logs.created_at))
+                    .all()
+                )
+                merge_daily_counts(rows, "Product Animation")
+
+            if source_filter in (None, "all", "commercial_24s"):
+                rows = (
+                    session.query(
+                        func.date(UgcLongformVideos.created_at).label("d"),
+                        func.count().label("cnt"),
+                    )
+                    .filter(
+                        UgcLongformVideos.brand_id == selected_brand_id,
+                        UgcLongformVideos.status == "completed",
+                        UgcLongformVideos.e2e.is_(True),
+                        *date_filters(UgcLongformVideos.created_at),
+                    )
+                    .group_by(func.date(UgcLongformVideos.created_at))
+                    .all()
+                )
+                merge_daily_counts(rows, "24s Commercial")
+
+            points = []
+            for day in sorted(points_index.keys()):
+                counts = points_index[day]
+                points.append(
+                    AdTrendPoint(
+                        date=day,
+                        counts=counts,
+                        total=sum(counts.values()),
+                    )
+                )
+
+            brand_name = (
+                session.query(Brand.name)
+                .filter(Brand.id == selected_brand_id)
+                .scalar()
+            )
+
+            return AdGenerationTrendResponse(
+                brand_id=selected_brand_id,
+                brand_name=brand_name,
+                ad_types=DASHBOARD_AD_TYPES,
+                points=points,
+            )
+        finally:
+            close_connections(session, tunnel)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error generating ad trend: {str(e)}"
+        )
+
+
+def _build_trend_summary(
+    session,
+    start_dt: datetime,
+    end_dt: datetime,
+    source_filter: Optional[str],
+    brand_ids: Optional[List[int]],
+    DASHBOARD_AD_TYPES: List[str],
+):
+    """Build daily, weekly, monthly point buckets. brand_ids=None means all brands."""
+    def date_filters(col):
+        return [col >= start_dt, col <= end_dt]
+
+    def merge_into(bucket_key: str, ad_type: str, cnt: int, buckets: Dict):
+        if bucket_key not in buckets:
+            buckets[bucket_key] = {t: 0 for t in DASHBOARD_AD_TYPES}
+        buckets[bucket_key][ad_type] = buckets[bucket_key].get(ad_type, 0) + int(cnt or 0)
+
+    daily_buckets: Dict[str, Dict[str, int]] = {}
+    weekly_buckets: Dict[str, Dict[str, int]] = {}
+    monthly_buckets: Dict[str, Dict[str, int]] = {}
+
+    def run_daily(model, col, ad_type, extra_filters):
+        q = session.query(func.date(col).label("d"), func.count().label("cnt")).filter(
+            *date_filters(col), *extra_filters
+        )
+        q = q.group_by(func.date(col))
+        for row in q.all():
+            key = row.d.isoformat() if hasattr(row.d, "isoformat") else str(row.d)
+            merge_into(key, ad_type, row.cnt, daily_buckets)
+
+    def run_weekly(model, col, ad_type, extra_filters):
+        # date_trunc('week', ...) returns Monday 00:00; cast to date for key
+        trunc_week = func.date_trunc("week", col)
+        q = session.query(trunc_week.label("w"), func.count().label("cnt")).filter(
+            *date_filters(col), *extra_filters
+        )
+        q = q.group_by(trunc_week)
+        for row in q.all():
+            if row.w:
+                d = row.w.date() if hasattr(row.w, "date") else row.w
+                key = d.isoformat() if hasattr(d, "isoformat") else str(d)
+                merge_into(key, ad_type, row.cnt, weekly_buckets)
+
+    def run_monthly(model, col, ad_type, extra_filters):
+        trunc_month = func.date_trunc("month", col)
+        q = session.query(trunc_month.label("m"), func.count().label("cnt")).filter(
+            *date_filters(col), *extra_filters
+        )
+        q = q.group_by(trunc_month)
+        for row in q.all():
+            if row.m:
+                d = row.m.date() if hasattr(row.m, "date") else row.m
+                key = d.isoformat() if hasattr(d, "isoformat") else str(d)
+                merge_into(key, ad_type, row.cnt, monthly_buckets)
+
+    if brand_ids is not None:
+        brand_filter_ft = [GPTFirstTime.brand_id.in_(brand_ids)]
+        brand_filter_ac = [AdCentral.brand_id.in_(brand_ids)]
+        brand_filter_bp = [GPTBlueprint.brand_id.in_(brand_ids)]
+        brand_filter_av = [
+            HeygenAvatarProductVideoGenerationLogs.brand_id.in_(
+                [str(b) for b in brand_ids]
+            ),
+            HeygenAvatarProductVideoGenerationLogs.source_environment == "prod",
+            HeygenAvatarProductVideoGenerationLogs.status == 200,
+        ]
+        brand_filter_clone = [
+            CloneAds.brand_id.in_(brand_ids),
+            CloneAds.source_environment == "prod",
+            CloneAds.final_video_url.isnot(None),
+        ]
+        brand_filter_prod = [
+            ProductVideoV2Logs.brand_id.in_(brand_ids),
+            ProductVideoV2Logs.lambda_invoked.is_(True),
+            ProductVideoV2Logs.status_code == 200,
+        ]
+        brand_filter_24s = [
+            UgcLongformVideos.brand_id.in_(brand_ids),
+            UgcLongformVideos.status == "completed",
+            UgcLongformVideos.e2e.is_(True),
+        ]
+    else:
+        brand_filter_ft = []
+        brand_filter_ac = []
+        brand_filter_bp = []
+        brand_filter_av = [
+            HeygenAvatarProductVideoGenerationLogs.source_environment == "prod",
+            HeygenAvatarProductVideoGenerationLogs.status == 200,
+        ]
+        brand_filter_clone = [
+            CloneAds.source_environment == "prod",
+            CloneAds.final_video_url.isnot(None),
+        ]
+        brand_filter_prod = [
+            ProductVideoV2Logs.lambda_invoked.is_(True),
+            ProductVideoV2Logs.status_code == 200,
+        ]
+        brand_filter_24s = [
+            UgcLongformVideos.status == "completed",
+            UgcLongformVideos.e2e.is_(True),
+        ]
+
+    if source_filter in (None, "all", "onboarding_ads"):
+        run_daily(GPTFirstTime, GPTFirstTime.created_at, "Image Ad", brand_filter_ft)
+        run_weekly(GPTFirstTime, GPTFirstTime.created_at, "Image Ad", brand_filter_ft)
+        run_monthly(GPTFirstTime, GPTFirstTime.created_at, "Image Ad", brand_filter_ft)
+    if source_filter in (None, "all", "ad_central"):
+        run_daily(AdCentral, AdCentral.created_at, "Image Ad", brand_filter_ac)
+        run_weekly(AdCentral, AdCentral.created_at, "Image Ad", brand_filter_ac)
+        run_monthly(AdCentral, AdCentral.created_at, "Image Ad", brand_filter_ac)
+    if source_filter in (None, "all", "creative_brief"):
+        run_daily(GPTBlueprint, GPTBlueprint.created_at, "Image Ad", brand_filter_bp)
+        run_weekly(GPTBlueprint, GPTBlueprint.created_at, "Image Ad", brand_filter_bp)
+        run_monthly(GPTBlueprint, GPTBlueprint.created_at, "Image Ad", brand_filter_bp)
+    if source_filter in (None, "all", "avatar_ads"):
+        run_daily(
+            HeygenAvatarProductVideoGenerationLogs,
+            HeygenAvatarProductVideoGenerationLogs.created_at,
+            "Avatar Video",
+            brand_filter_av,
+        )
+        run_weekly(
+            HeygenAvatarProductVideoGenerationLogs,
+            HeygenAvatarProductVideoGenerationLogs.created_at,
+            "Avatar Video",
+            brand_filter_av,
+        )
+        run_monthly(
+            HeygenAvatarProductVideoGenerationLogs,
+            HeygenAvatarProductVideoGenerationLogs.created_at,
+            "Avatar Video",
+            brand_filter_av,
+        )
+    if source_filter in (None, "all", "clone_video"):
+        run_daily(CloneAds, CloneAds.created_at, "Clone Video", brand_filter_clone)
+        run_weekly(CloneAds, CloneAds.created_at, "Clone Video", brand_filter_clone)
+        run_monthly(CloneAds, CloneAds.created_at, "Clone Video", brand_filter_clone)
+    if source_filter in (None, "all", "product_animation"):
+        run_daily(
+            ProductVideoV2Logs,
+            ProductVideoV2Logs.created_at,
+            "Product Animation",
+            brand_filter_prod,
+        )
+        run_weekly(
+            ProductVideoV2Logs,
+            ProductVideoV2Logs.created_at,
+            "Product Animation",
+            brand_filter_prod,
+        )
+        run_monthly(
+            ProductVideoV2Logs,
+            ProductVideoV2Logs.created_at,
+            "Product Animation",
+            brand_filter_prod,
+        )
+    if source_filter in (None, "all", "commercial_24s"):
+        run_daily(
+            UgcLongformVideos,
+            UgcLongformVideos.created_at,
+            "24s Commercial",
+            brand_filter_24s,
+        )
+        run_weekly(
+            UgcLongformVideos,
+            UgcLongformVideos.created_at,
+            "24s Commercial",
+            brand_filter_24s,
+        )
+        run_monthly(
+            UgcLongformVideos,
+            UgcLongformVideos.created_at,
+            "24s Commercial",
+            brand_filter_24s,
+        )
+
+    # Fill daily with all days in range so frontend has full x-axis
+    cursor = start_dt.date()
+    end_date_only = end_dt.date()
+    while cursor <= end_date_only:
+        key = cursor.isoformat()
+        if key not in daily_buckets:
+            daily_buckets[key] = {t: 0 for t in DASHBOARD_AD_TYPES}
+        cursor += timedelta(days=1)
+
+    def to_points(buckets):
+        return [
+            AdTrendPoint(date=k, counts=b, total=sum(b.values()))
+            for k, b in sorted(buckets.items())
+        ]
+
+    return AdGenerationTrendSummaryResponse(
+        daily=to_points(daily_buckets),
+        weekly=to_points(weekly_buckets),
+        monthly=to_points(monthly_buckets),
+        ad_types=DASHBOARD_AD_TYPES,
+    )
+
+
+@app.get(
+    "/api/analytics/ad_generation_trend_summary",
+    response_model=AdGenerationTrendSummaryResponse,
+)
+async def ad_generation_trend_summary(
+    brand_id: Optional[Union[str, int]] = Query(
+        None, description="Single brand ID (optional; omit when brands=true)"
+    ),
+    brands: Optional[bool] = Query(
+        None, description="If True, aggregate across all brands in date range"
+    ),
+    start_date: Optional[str] = Query(
+        None, description="Start date (YYYY-MM-DD)"
+    ),
+    end_date: Optional[str] = Query(
+        None, description="End date (YYYY-MM-DD)"
+    ),
+    source_filter: Optional[str] = Query(
+        "all",
+        description="Filter by source",
+    ),
+):
+    """Daily, weekly, and monthly ad generation trend (stacked by ad type). Single brand or all brands."""
+    try:
+        session, tunnel = get_session()
+        try:
+            start_dt = (
+                datetime.strptime(start_date, "%Y-%m-%d").replace(
+                    hour=0, minute=0, second=0
+                )
+                if start_date
+                else None
+            )
+            end_dt = (
+                datetime.strptime(end_date, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59
+                )
+                if end_date
+                else None
+            )
+            if not start_dt or not end_dt:
+                end_dt = datetime.now().replace(hour=23, minute=59, second=59)
+                start_dt = (datetime.now() - timedelta(days=30)).replace(
+                    hour=0, minute=0, second=0
+                )
+
+            DASHBOARD_AD_TYPES = [
+                "Image Ad",
+                "Clone Video",
+                "Avatar Video",
+                "Avatar + Product",
+                "Product Animation",
+                "24s Commercial",
+            ]
+
+            if brands is True:
+                brand_ids = None
+            elif brand_id:
+                brand_ids = parse_brand_ids(brand_id)
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Provide brand_id or set brands=true",
+                )
+
+            return _build_trend_summary(
+                session, start_dt, end_dt, source_filter, brand_ids, DASHBOARD_AD_TYPES
+            )
+        finally:
+            close_connections(session, tunnel)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error generating trend summary: {str(e)}"
         )
 
 
