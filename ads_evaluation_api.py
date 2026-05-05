@@ -348,6 +348,7 @@ class AdGenerationTrendResponse(BaseModel):
 
 class AdGenerationTrendSummaryResponse(BaseModel):
     """Daily, weekly, and monthly aggregated counts per ad type (all brands or single brand)."""
+
     daily: List[AdTrendPoint]
     weekly: List[AdTrendPoint]
     monthly: List[AdTrendPoint]
@@ -589,6 +590,7 @@ def get_combined_ads(
                             "brand_id": row[1],
                             "timestamp": row[3].isoformat() if row[3] else None,
                             "generated_by": "onboarding_ads",
+                            "user_prompt": "",
                         }
                     )
                 except Exception:
@@ -606,6 +608,7 @@ def get_combined_ads(
             AdCentral.response["product_asset_url"].astext.label("product"),
             AdCentral.response["lifestyle_asset_url"].astext.label("life"),
             AdCentral.response["s3_uri"].astext.label("s3_uri"),
+            AdCentral.payload["ad_concept"].astext.label("ad_concept"),
             AdCentral.brand_id,
             AdCentral.created_at,
         )
@@ -663,6 +666,7 @@ def get_combined_ads(
                     "brand_id": r.brand_id,
                     "timestamp": r.created_at.isoformat() if r.created_at else None,
                     "generated_by": "ad_central",
+                    "user_prompt": r.ad_concept or "",
                 }
             )
         return ads
@@ -711,6 +715,7 @@ def get_combined_ads(
                     "reference_ad": r.ref,
                     "generated_ad": r.gen,  # generate_presigned_url(r.gen),
                     "prompt": r.prompt or "",
+                    "user_prompt": "",
                     "asset": r.asset,
                     "id": extract_id_from_url(r.s3_uri),
                     "brand_id": r.brand_id,
@@ -790,6 +795,7 @@ def get_combined_ads(
                             "prompt": prompt,
                             "asset": asset,
                             "id": extract_id_from_url(row[0]),
+                            "user_prompt": "",
                             "brand_id": int(row[1])
                             if row[1] and str(row[1]).isdigit()
                             else None,
@@ -1304,12 +1310,16 @@ async def ad_generation_summary(
             # Normalize brand scope and dates
             # Parse date range if provided (applies to both brand_id and brands=true)
             start_dt = (
-                datetime.strptime(start_date, "%Y-%m-%d").replace(hour=0, minute=0, second=0)
+                datetime.strptime(start_date, "%Y-%m-%d").replace(
+                    hour=0, minute=0, second=0
+                )
                 if start_date
                 else None
             )
             end_dt = (
-                datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+                datetime.strptime(end_date, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59
+                )
                 if end_date
                 else None
             )
@@ -1361,22 +1371,24 @@ async def ad_generation_summary(
                 return fs
 
             # Source: Onboarding (GPTFirstTime) -> Image Ad
-            if source_filter in (None, "all", "onboarding_ads"):
-                if brand_ids:
-                    fs = [GPTFirstTime.brand_id.in_(brand_ids)]
-                    if start_dt or end_dt:
-                        fs += date_filters(GPTFirstTime.created_at)
-                else:
-                    fs = date_filters(GPTFirstTime.created_at)
-                image_from_onboarding = _counts_grouped_by_brand(
-                    session,
-                    GPTFirstTime,
-                    GPTFirstTime.brand_id,
-                    created_at_col=GPTFirstTime.created_at,
-                    extra_filters=fs,
-                )
-            else:
-                image_from_onboarding = {}
+            # Excluded for now: do not count gpt_first_time_logs (onboarding_ads) toward Image Ad
+            # if source_filter in (None, "all", "onboarding_ads"):
+            #     if brand_ids:
+            #         fs = [GPTFirstTime.brand_id.in_(brand_ids)]
+            #         if start_dt or end_dt:
+            #             fs += date_filters(GPTFirstTime.created_at)
+            #     else:
+            #         fs = date_filters(GPTFirstTime.created_at)
+            #     image_from_onboarding = _counts_grouped_by_brand(
+            #         session,
+            #         GPTFirstTime,
+            #         GPTFirstTime.brand_id,
+            #         created_at_col=GPTFirstTime.created_at,
+            #         extra_filters=fs,
+            #     )
+            # else:
+            #     image_from_onboarding = {}
+            image_from_onboarding = {}
 
             # Source: Ad Central -> Image Ad
             if source_filter in (None, "all", "ad_central"):
@@ -1426,10 +1438,15 @@ async def ad_generation_summary(
                         HeygenAvatarProductVideoGenerationLogs.status == 200,
                     ]
                     if start_dt or end_dt:
-                        fs += date_filters(HeygenAvatarProductVideoGenerationLogs.created_at)
+                        fs += date_filters(
+                            HeygenAvatarProductVideoGenerationLogs.created_at
+                        )
                 else:
                     fs = date_filters(HeygenAvatarProductVideoGenerationLogs.created_at)
-                    fs.append(HeygenAvatarProductVideoGenerationLogs.source_environment == "prod")
+                    fs.append(
+                        HeygenAvatarProductVideoGenerationLogs.source_environment
+                        == "prod"
+                    )
                     fs.append(HeygenAvatarProductVideoGenerationLogs.status == 200)
                 avatar_counts = _counts_grouped_by_brand(
                     session,
@@ -1596,9 +1613,7 @@ async def ad_generation_summary(
         )
 
 
-@app.get(
-    "/api/analytics/ad_generation_trend", response_model=AdGenerationTrendResponse
-)
+@app.get("/api/analytics/ad_generation_trend", response_model=AdGenerationTrendResponse)
 async def ad_generation_trend(
     brand_id: Union[str, int] = Query(
         ..., description="Single brand ID for trend chart"
@@ -1680,20 +1695,21 @@ async def ad_generation_trend(
                         continue
                     points_index[day_key][ad_type] += int(cnt or 0)
 
-            if source_filter in (None, "all", "onboarding_ads"):
-                rows = (
-                    session.query(
-                        func.date(GPTFirstTime.created_at).label("d"),
-                        func.count().label("cnt"),
-                    )
-                    .filter(
-                        GPTFirstTime.brand_id == selected_brand_id,
-                        *date_filters(GPTFirstTime.created_at),
-                    )
-                    .group_by(func.date(GPTFirstTime.created_at))
-                    .all()
-                )
-                merge_daily_counts(rows, "Image Ad")
+            # Onboarding (gpt_first_time_logs) excluded from Image Ad for now
+            # if source_filter in (None, "all", "onboarding_ads"):
+            #     rows = (
+            #         session.query(
+            #             func.date(GPTFirstTime.created_at).label("d"),
+            #             func.count().label("cnt"),
+            #         )
+            #         .filter(
+            #             GPTFirstTime.brand_id == selected_brand_id,
+            #             *date_filters(GPTFirstTime.created_at),
+            #         )
+            #         .group_by(func.date(GPTFirstTime.created_at))
+            #         .all()
+            #     )
+            #     merge_daily_counts(rows, "Image Ad")
 
             if source_filter in (None, "all", "ad_central"):
                 rows = (
@@ -1728,9 +1744,9 @@ async def ad_generation_trend(
             if source_filter in (None, "all", "avatar_ads"):
                 rows = (
                     session.query(
-                        func.date(HeygenAvatarProductVideoGenerationLogs.created_at).label(
-                            "d"
-                        ),
+                        func.date(
+                            HeygenAvatarProductVideoGenerationLogs.created_at
+                        ).label("d"),
                         func.count().label("cnt"),
                     )
                     .filter(
@@ -1739,9 +1755,13 @@ async def ad_generation_trend(
                         HeygenAvatarProductVideoGenerationLogs.source_environment
                         == "prod",
                         HeygenAvatarProductVideoGenerationLogs.status == 200,
-                        *date_filters(HeygenAvatarProductVideoGenerationLogs.created_at),
+                        *date_filters(
+                            HeygenAvatarProductVideoGenerationLogs.created_at
+                        ),
                     )
-                    .group_by(func.date(HeygenAvatarProductVideoGenerationLogs.created_at))
+                    .group_by(
+                        func.date(HeygenAvatarProductVideoGenerationLogs.created_at)
+                    )
                     .all()
                 )
                 merge_daily_counts(rows, "Avatar Video")
@@ -1809,9 +1829,7 @@ async def ad_generation_trend(
                 )
 
             brand_name = (
-                session.query(Brand.name)
-                .filter(Brand.id == selected_brand_id)
-                .scalar()
+                session.query(Brand.name).filter(Brand.id == selected_brand_id).scalar()
             )
 
             return AdGenerationTrendResponse(
@@ -1839,13 +1857,16 @@ def _build_trend_summary(
     DASHBOARD_AD_TYPES: List[str],
 ):
     """Build daily, weekly, monthly point buckets. brand_ids=None means all brands."""
+
     def date_filters(col):
         return [col >= start_dt, col <= end_dt]
 
     def merge_into(bucket_key: str, ad_type: str, cnt: int, buckets: Dict):
         if bucket_key not in buckets:
             buckets[bucket_key] = {t: 0 for t in DASHBOARD_AD_TYPES}
-        buckets[bucket_key][ad_type] = buckets[bucket_key].get(ad_type, 0) + int(cnt or 0)
+        buckets[bucket_key][ad_type] = buckets[bucket_key].get(ad_type, 0) + int(
+            cnt or 0
+        )
 
     daily_buckets: Dict[str, Dict[str, int]] = {}
     weekly_buckets: Dict[str, Dict[str, int]] = {}
@@ -1932,10 +1953,11 @@ def _build_trend_summary(
             UgcLongformVideos.e2e.is_(True),
         ]
 
-    if source_filter in (None, "all", "onboarding_ads"):
-        run_daily(GPTFirstTime, GPTFirstTime.created_at, "Image Ad", brand_filter_ft)
-        run_weekly(GPTFirstTime, GPTFirstTime.created_at, "Image Ad", brand_filter_ft)
-        run_monthly(GPTFirstTime, GPTFirstTime.created_at, "Image Ad", brand_filter_ft)
+    # Onboarding (gpt_first_time_logs) excluded from Image Ad for now
+    # if source_filter in (None, "all", "onboarding_ads"):
+    #     run_daily(GPTFirstTime, GPTFirstTime.created_at, "Image Ad", brand_filter_ft)
+    #     run_weekly(GPTFirstTime, GPTFirstTime.created_at, "Image Ad", brand_filter_ft)
+    #     run_monthly(GPTFirstTime, GPTFirstTime.created_at, "Image Ad", brand_filter_ft)
     if source_filter in (None, "all", "ad_central"):
         run_daily(AdCentral, AdCentral.created_at, "Image Ad", brand_filter_ac)
         run_weekly(AdCentral, AdCentral.created_at, "Image Ad", brand_filter_ac)
@@ -2040,12 +2062,8 @@ async def ad_generation_trend_summary(
     brands: Optional[bool] = Query(
         None, description="If True, aggregate across all brands in date range"
     ),
-    start_date: Optional[str] = Query(
-        None, description="Start date (YYYY-MM-DD)"
-    ),
-    end_date: Optional[str] = Query(
-        None, description="End date (YYYY-MM-DD)"
-    ),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     source_filter: Optional[str] = Query(
         "all",
         description="Filter by source",

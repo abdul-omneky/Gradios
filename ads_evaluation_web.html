@@ -351,6 +351,17 @@
             font-style: italic;
         }
 
+        .user-prompt-display {
+            background: #f0f4ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #43a047;
+            font-style: normal;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
         .asset-preview {
             max-width: 150px;
             border-radius: 8px;
@@ -723,6 +734,26 @@
         }
 
         // Format timestamp to user-friendly format
+        function extractUserPrompt(ad) {
+            // Prefer the dedicated field when present and non-empty
+            if (ad.user_prompt && ad.user_prompt.trim()) {
+                return ad.user_prompt.trim();
+            }
+            // Fallback: parse it out of the full prompt string
+            if (ad.prompt) {
+                const marker = '# USER PROMPT (HIGHEST PRIORITY — render exactly this)';
+                const idx = ad.prompt.indexOf(marker);
+                if (idx !== -1) {
+                    const afterMarker = ad.prompt.slice(idx + marker.length).trimStart();
+                    // Content ends at the next section header (line starting with #)
+                    const nextSection = afterMarker.search(/\n\s*#/);
+                    const text = nextSection !== -1 ? afterMarker.slice(0, nextSection).trim() : afterMarker.trim();
+                    if (text) return text;
+                }
+            }
+            return '';
+        }
+
         function formatTimestamp(timestamp) {
             try {
                 const date = new Date(timestamp);
@@ -1332,6 +1363,11 @@
                     <div class="feedback-section">
                         <div class="feedback-title">🖼️ Generated Ad Feedback</div>
                         ${createFeedbackControls(adKey, 'generated')}
+                        
+                        ${extractUserPrompt(ad) ? `
+                            <div class="feedback-title">💬 User Prompt</div>
+                            <div class="user-prompt-display">${extractUserPrompt(ad)}</div>
+                        ` : ''}
                         
                         ${ad.prompt ? `
                             <div class="feedback-title">🧠 Prompt</div>
